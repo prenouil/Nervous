@@ -55,9 +55,23 @@ func play(p: int) -> int:
 	return card
 
 
+# Paire sur le dessus du tas.
 func is_pair() -> bool:
 	var n := center.size()
-	return n >= 2 and Cards.rank(center[n - 1]) == Cards.rank(center[n - 2])
+	return n >= 2 and Cards.forms_pair(center[n - 1], center[n - 2])
+
+
+# Paire juste sous la carte du dessus (recouverte par une seule carte).
+func is_covered_pair() -> bool:
+	var n := center.size()
+	return n >= 3 and Cards.forms_pair(center[n - 2], center[n - 3])
+
+
+# Retire la carte du dessus du centre et la remet sous le tas du joueur.
+func eject_top_to(p: int) -> int:
+	var card: int = center.pop_back()
+	piles[p].append(card)
+	return card
 
 
 # Le tas du centre est mélangé puis distribué une carte chacun, dans l'ordre donné,

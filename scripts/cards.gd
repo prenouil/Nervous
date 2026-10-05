@@ -21,3 +21,12 @@ static func is_red(card: int) -> bool:
 
 static func text(card: int) -> String:
 	return "%s\n%s" % [RANKS[rank(card)], SUITS[suit(card)]]
+
+
+static func is_face(card: int) -> bool:
+	return rank(card) >= 10  # valet, dame, roi
+
+
+# Deux cartes qui se suivent forment une paire : même valeur, ou deux têtes.
+static func forms_pair(a: int, b: int) -> bool:
+	return rank(a) == rank(b) or (is_face(a) and is_face(b))

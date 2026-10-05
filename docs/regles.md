@@ -24,22 +24,40 @@ Jeu de cartes de table en 3D, vu à la première personne. Jeu de rapidité insp
 - **Timer : le joueur a 5 secondes pour jouer sa carte.** S'il ne joue pas à temps, **il ramasse le tas du centre**, puis c'est au joueur suivant (choix provisoire).
 - Un joueur qui n'a plus de cartes passe son tour pour retourner une carte, mais **continue de taper**.
 - **Pas de temps mort** : dès qu'une carte est jouée, le joueur suivant peut jouer aussitôt.
-- Une paire visible **n'arrête pas le jeu**. Si une carte la recouvre (à l'atterrissage) avant que quelqu'un tape, **la paire est perdue**.
-- Dès qu'un joueur tape, sa main bloque le tas : plus personne ne joue, les autres ont 3 secondes pour taper.
+- Une paire visible **n'arrête pas le jeu**. Elle peut être recouverte (voir « Paire recouverte »).
 - La lumière de tour **suit le joueur actif avec du retard** : elle accentue le chaos de la partie.
+
+## Paires
+
+Deux cartes consécutives forment une paire si :
+- elles ont **la même valeur** (deux dames, deux 5…) ;
+- ou ce sont **deux têtes** (valet, dame, roi), par exemple valet puis roi.
 
 ## Taper sur le tas
 
-- Quand **deux cartes consécutives ont la même valeur** (deux dames, deux 5…), tous les joueurs doivent taper sur le tas.
-- Geste du joueur humain : placer le curseur sur le tas du milieu et faire un **clic droit**. Le bras s'avance et la main s'abat violemment sur le tas.
+- Geste du joueur humain : placer la main sur le tas du milieu et faire un **clic droit**. Le bras s'avance et la main s'abat violemment sur le tas.
+- **Dès qu'un joueur tape, sa main bloque le tas** : plus personne ne joue. Les autres ont **3 secondes** pour taper eux aussi. Ensuite on juge si la première tape était valide.
 - Les mains s'empilent dans l'ordre d'arrivée. **L'ordre est essentiel.**
-- **Le dernier à taper** ramasse toutes les cartes du centre. Elles sont **mélangées puis placées sous son tas**, même s'il n'avait plus de cartes.
-- Un joueur qui **n'a pas tapé dans les 3 secondes** est considéré comme dernier. **S'ils sont plusieurs dans ce cas, ils se partagent le tas** (cartes mélangées puis distribuées une à une). Le premier d'entre eux, dans l'ordre des sièges à partir du joueur qui a posé la carte, rejoue (choix provisoire).
-- **Le perdant joue la carte suivante.**
+- Les cartes ramassées sont toujours **mélangées puis placées sous le tas** de ceux qui ramassent, même s'ils n'avaient plus de cartes. Quand plusieurs joueurs se partagent le tas, les cartes sont distribuées une à une.
 
-## Taper par erreur
+### Tape valide
 
-Règle essentielle du jeu, qui couvre plusieurs cas : **[À DÉFINIR]**.
+- **Le dernier à taper** ramasse toutes les cartes du centre, si tout le monde a tapé.
+- Sinon, **tous ceux qui n'ont pas tapé** se partagent le tas.
+- Le premier perdant, dans l'ordre des sièges à partir du joueur qui a posé la paire, **joue la carte suivante** (choix provisoire).
+- Une paire visible que **personne ne tape pendant 3 secondes** : tout le monde se partage le tas.
+
+### Paire recouverte
+
+- Si une carte recouvre la paire, les joueurs ont **encore 0,5 seconde après son atterrissage** pour taper.
+- Une tape dans ce délai **éjecte la carte qui recouvre** : on la voit voler au loin, puis elle retourne **sous le tas de son propriétaire**. La tape est valide.
+- Passé ce délai, la paire est perdue : taper devient une tape par erreur.
+- Une paire recouverte par deux cartes est perdue.
+
+### Tape par erreur
+
+- Si la première tape n'était pas valide, **seuls les tapeurs** (tous les fautifs) se partagent le tas. Ceux qui n'ont pas tapé ne sont pas sanctionnés.
+- Le premier fautif joue la carte suivante (choix provisoire).
 
 ## Fin de partie
 
@@ -56,10 +74,10 @@ Règle essentielle du jeu, qui couvre plusieurs cas : **[À DÉFINIR]**.
 
 ## Ordinateurs
 
-- Temps pour jouer sa carte : **aléatoire entre 0,1 et 1 s**.
+- Temps pour jouer sa carte : **aléatoire entre 0,6 et 1,5 s**.
 - **Hésitation** : si les deux cartes du dessus se ressemblent sans former une paire (valeurs proches à 2 près, ou même couleur rouge/noir), malus aléatoire de 0,1 à 1 s.
 - Temps de réaction pour taper : **aléatoire** à chaque paire, de 0,25 à 0,8 s après l'arrivée de la carte.
-- Ils peuvent faire des erreurs, par exemple taper sans raison.
+- **Réflexe** : quand quelqu'un tape alors qu'il n'y a pas de paire, chaque ordinateur a 20 % de chances de suivre (et donc de se tromper aussi).
 - Comportement à affiner plus tard.
 
 ## Direction artistique

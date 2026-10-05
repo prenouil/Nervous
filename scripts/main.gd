@@ -104,6 +104,7 @@ func _ready() -> void:
 	server.turn_started.connect(_on_turn_started)
 	server.card_played.connect(_on_card_played)
 	server.slap_registered.connect(_on_slap_registered)
+	server.card_ejected.connect(_on_card_ejected)
 	server.pile_taken.connect(_on_pile_taken)
 	server.game_over.connect(_on_game_over)
 	for i in range(1, SEATS):
@@ -515,7 +516,9 @@ func _on_card_played(player: int, card: int, center_count: int) -> void:
 	var end := Vector3(landing.x, center_count * CARD_T + 0.001, landing.y)
 	var end_yaw := seat_yaw + randf_range(-0.8, 0.8)
 	# Retournement vers l'avant : le bord éloigné se lève, la face se montre aux adversaires.
-	node.create_tween().tween_method(func(t: float):
+	var flight := node.create_tween()
+	node.set_meta("flight", flight)
+	flight.tween_method(func(t: float):
 		node.global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.09
 		node.global_basis = Basis(Vector3.UP, lerp_angle(seat_yaw, end_yaw, t)) * Basis(Vector3.RIGHT, PI * (1.0 - t)),
 		0.0, 1.0, GameServer.CARD_TRAVEL)
@@ -526,6 +529,31 @@ func _on_card_played(player: int, card: int, center_count: int) -> void:
 		ht.tween_property(hand, "global_position", hand.global_position.lerp(end, 0.5) + Vector3(0, 0.03, 0), 0.18)
 		ht.tween_property(hand, "global_position", _rest_pos(player), 0.25)
 		ht.tween_callback(func(): hand_locked[player] = false)
+
+
+# La carte qui recouvrait la paire est éjectée au loin, puis rejoint le tas de son propriétaire.
+func _on_card_ejected(player: int, _card: int) -> void:
+	var node: Node3D = center_cards.pop_back()
+	var previous: Tween = node.get_meta("flight")
+	if previous.is_valid():
+		previous.kill()
+	var start := node.global_position
+	var away := Vector2.from_angle(randf() * TAU) * 2.5
+	var end := Vector3(away.x, 1.2, away.y - 1.0)  # plutôt vers le fond, loin de la caméra
+	var spin_axis := Vector3(randf_range(-1, 1), 1, randf_range(-1, 1)).normalized()
+	var start_basis := node.global_basis
+	var tw := node.create_tween()
+	tw.tween_method(func(t: float):
+		node.global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.6
+		node.global_basis = Basis(spin_axis, t * TAU * 4.0) * start_basis,
+		0.0, 1.0, 0.7).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tw.tween_callback(node.queue_free)
+	_show_message("Paire recouverte… mais tape à temps ! La carte est éjectée.", 1.5)
+	var done := create_tween()
+	done.tween_interval(0.7)
+	done.tween_callback(func():
+		counts[player] += 1
+		_update_stack(player))
 
 
 func _on_slap_registered(player: int, order: int) -> void:
@@ -635,8 +663,13 @@ func _pile_message(shares: Dictionary, reason: String) -> String:
 		for p in takers:
 			names.append(NAMES[p])
 		var listed := ", ".join(names.slice(0, -1)) + " et " + names[-1]
+		if reason == "false_slap":
+			return "Tape par erreur ! %s se partagent %d cartes." % [listed, total]
 		return "%s n'ont pas tapé : ils se partagent %d cartes !" % [listed, total]
 	var p: int = takers[0]
+	if reason == "false_slap":
+		return ("Tape par erreur ! Tu ramasses %d cartes." % total) if p == HUMAN \
+			else ("%s a tapé par erreur et ramasse %d cartes !" % [NAMES[p], total])
 	if reason == "timeout" and total == 0:
 		return "Temps écoulé ! " + ("Tu passes ton tour." if p == HUMAN else NAMES[p] + " passe son tour.")
 	if reason == "timeout":

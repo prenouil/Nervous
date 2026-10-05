@@ -12,6 +12,8 @@ var plays := 0
 var pickups := 0
 var pairs := 0
 var covered := 0
+var false_slaps := 0
+var ejections := 0
 
 
 func _initialize() -> void:
@@ -27,14 +29,16 @@ func _initialize() -> void:
 		_check_cards())
 	server.pile_taken.connect(func(shares, reason):
 		pickups += 1
+		if reason == "false_slap": false_slaps += 1
 		print("  ramassage %s (%s) -> %s" % [shares, reason, server.rules.counts()])
 		_check_cards())
 	server.slap_window_opened.connect(func(): pairs += 1)
 	server.slap_window_closed.connect(func(): covered += 1)
+	server.card_ejected.connect(func(_p, _c): ejections += 1)
 	server.game_over.connect(func(loser):
 		_check_cards()
-		print("OK : partie terminée en %d cartes jouées, %d ramassages, %d paires dont %d recouvertes. Perdant : joueur %d. Tas : %s"
-			% [plays, pickups, pairs, covered, loser, server.rules.counts()])
+		print("OK : partie terminée en %d cartes jouées, %d ramassages, %d paires dont %d recouvertes, %d éjections, %d tapes par erreur. Perdant : joueur %d. Tas : %s"
+			% [plays, pickups, pairs, covered, ejections, false_slaps, loser, server.rules.counts()])
 		quit(0 if loser >= 0 else 1))
 	server.start_game.call_deferred(4)
 
