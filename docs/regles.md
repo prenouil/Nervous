@@ -30,6 +30,7 @@ Jeu de cartes de table en 3D, vu à la première personne. Jeu de rapidité insp
 - Geste du joueur humain : placer le curseur sur le tas du milieu et faire un **clic droit**. Le bras s'avance et la main s'abat violemment sur le tas.
 - Les mains s'empilent dans l'ordre d'arrivée. **L'ordre est essentiel.**
 - **Le dernier à taper** ramasse toutes les cartes du centre. Elles sont **mélangées puis placées sous son tas**, même s'il n'avait plus de cartes.
+- Un joueur qui **n'a pas tapé dans les 3 secondes** est considéré comme dernier. **S'ils sont plusieurs dans ce cas, ils se partagent le tas** (cartes mélangées puis distribuées une à une). Le premier d'entre eux, dans l'ordre des sièges à partir du joueur qui a posé la carte, rejoue (choix provisoire).
 - **Le perdant joue la carte suivante.**
 
 ## Taper par erreur
@@ -51,7 +52,7 @@ Règle essentielle du jeu, qui couvre plusieurs cas : **[À DÉFINIR]**.
 
 ## Ordinateurs
 
-- Chacun a son propre temps de réaction (rapide, moyen, lent), avec une part de hasard.
+- Temps de réaction **aléatoire** à chaque paire, dans une fourchette raisonnable (0,25 à 0,8 s).
 - Ils peuvent faire des erreurs, par exemple taper sans raison.
 - Comportement à affiner plus tard.
 

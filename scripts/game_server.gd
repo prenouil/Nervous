@@ -10,13 +10,13 @@ signal turn_started(player: int, duration: float)
 signal card_played(player: int, card: int, center_count: int)
 signal slap_window_opened
 signal slap_registered(player: int, order: int)
-signal pile_taken(player: int, count: int, reason: String)  # reason : "slap" ou "timeout"
+signal pile_taken(shares: Dictionary, reason: String)  # { joueur: cartes }, reason : "slap" ou "timeout"
 signal game_over(loser: int)
 
 const TURN_TIME := 5.0        # temps pour jouer sa carte
 const CARD_TRAVEL := 0.35     # durée du vol de la carte vers le centre
 const SLAP_WINDOW := 3.0      # temps laissé pour taper, après l'arrivée de la carte
-const RESOLVE_DELAY := 1.4    # pause après un ramassage, le temps de l'animation
+const RESOLVE_DELAY := 1.9    # pause après un ramassage, le temps de l'animation
 
 enum State { IDLE, TURN, SLAP, RESOLVING, OVER }
 
@@ -81,28 +81,28 @@ func _start_turn(p: int) -> void:
 	turn_started.emit(p, TURN_TIME)
 
 
-# Le dernier à taper ramasse. Si quelqu'un n'a pas tapé à temps, c'est lui le dernier.
+# Le dernier à taper ramasse. Ceux qui n'ont pas tapé à temps sont tous « derniers » :
+# ils se partagent le tas, et le premier d'entre eux après le joueur actif rejoue.
 func _resolve_slap() -> void:
 	state = State.RESOLVING
-	var loser := -1
+	var losers: Array[int] = []
 	if _slap_order.size() == rules.num_players:
-		loser = _slap_order[-1]
+		losers.append(_slap_order[-1])
 	else:
-		for p in rules.num_players:
+		for i in rules.num_players:
+			var p := (current_player + i) % rules.num_players
 			if not p in _slap_order:
-				loser = p
-				break
-	var count := rules.give_center_to(loser, rng)
-	pile_taken.emit(loser, count, "slap")
-	_after(RESOLVE_DELAY, func(): _continue_with(loser))
+				losers.append(p)
+	pile_taken.emit(rules.give_center_to(losers, rng), "slap")
+	_after(RESOLVE_DELAY, func(): _continue_with(losers[0]))
 
 
 # Temps écoulé : le joueur ramasse le tas du centre, puis on passe au suivant.
 func _on_turn_timeout() -> void:
 	state = State.RESOLVING
 	var p := current_player
-	var count := rules.give_center_to(p, rng)
-	pile_taken.emit(p, count, "timeout")
+	var losers: Array[int] = [p]
+	pile_taken.emit(rules.give_center_to(losers, rng), "timeout")
 	_after(RESOLVE_DELAY, func(): _continue_with(rules.next_player_from(p)))
 
 

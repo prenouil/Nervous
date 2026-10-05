@@ -4,7 +4,6 @@ extends SceneTree
 
 const GameServer = preload("res://scripts/game_server.gd")
 const BotPlayer = preload("res://scripts/bot_player.gd")
-const REACTIONS := [0.2, 0.3, 0.45, 0.6]
 const MAX_GAME_SECONDS := 3000.0
 
 var server: GameServer
@@ -20,13 +19,13 @@ func _initialize() -> void:
 	for i in 4:
 		var bot := BotPlayer.new()
 		root.add_child(bot)
-		bot.setup(i, server, REACTIONS[i])
+		bot.setup(i, server)
 	server.card_played.connect(func(_p, _c, _n):
 		plays += 1
 		_check_cards())
-	server.pile_taken.connect(func(p, n, reason):
+	server.pile_taken.connect(func(shares, reason):
 		pickups += 1
-		print("  joueur %d ramasse %d cartes (%s) -> %s" % [p, n, reason, server.rules.counts()])
+		print("  ramassage %s (%s) -> %s" % [shares, reason, server.rules.counts()])
 		_check_cards())
 	server.game_over.connect(func(loser):
 		_check_cards()

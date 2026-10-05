@@ -4,16 +4,16 @@ extends Node
 
 const GameServer = preload("res://scripts/game_server.gd")
 
+const REACTION_RANGE := Vector2(0.25, 0.8)  # temps de réaction pour taper, tiré au hasard à chaque paire
+
 var seat := 0
-var reaction := 0.4   # temps de réaction de base pour taper, en secondes
 var server: GameServer
 var rng := RandomNumberGenerator.new()
 
 
-func setup(p_seat: int, p_server: GameServer, p_reaction: float) -> void:
+func setup(p_seat: int, p_server: GameServer) -> void:
 	seat = p_seat
 	server = p_server
-	reaction = p_reaction
 	rng.randomize()
 	server.turn_started.connect(_on_turn_started)
 	server.slap_window_opened.connect(_on_slap_window_opened)
@@ -25,7 +25,7 @@ func _on_turn_started(player: int, _duration: float) -> void:
 
 
 func _on_slap_window_opened() -> void:
-	var delay := GameServer.CARD_TRAVEL + reaction + rng.randf_range(0.0, 0.35)
+	var delay := GameServer.CARD_TRAVEL + rng.randf_range(REACTION_RANGE.x, REACTION_RANGE.y)
 	_after(delay, func(): server.request_slap(seat))
 
 

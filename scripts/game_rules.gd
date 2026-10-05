@@ -60,13 +60,20 @@ func is_pair() -> bool:
 	return n >= 2 and Cards.rank(center[n - 1]) == Cards.rank(center[n - 2])
 
 
-# Le tas du centre est mélangé et placé sous le tas du joueur.
-func give_center_to(p: int, rng: RandomNumberGenerator) -> int:
+# Le tas du centre est mélangé puis distribué une carte chacun, dans l'ordre donné,
+# sous le tas des joueurs. Renvoie { joueur: nombre de cartes reçues }.
+func give_center_to(players: Array[int], rng: RandomNumberGenerator) -> Dictionary:
 	var cards := center.duplicate()
 	shuffle(cards, rng)
-	piles[p].append_array(cards)
+	var shares := {}
+	for p in players:
+		shares[p] = 0
+	for i in cards.size():
+		var p := players[i % players.size()]
+		piles[p].append(cards[i])
+		shares[p] += 1
 	center.clear()
-	return cards.size()
+	return shares
 
 
 func players_with_cards() -> Array[int]:

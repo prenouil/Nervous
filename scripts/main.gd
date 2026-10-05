@@ -10,7 +10,6 @@ const Cards = preload("res://scripts/cards.gd")
 const SEATS := 4
 const HUMAN := 0
 const NAMES := ["Toi", "Léon", "Margot", "Igor"]
-const BOT_REACTIONS := [0.0, 0.30, 0.45, 0.65]
 const SKIN_COLORS := [
 	Color(0.96, 0.78, 0.62), Color(0.55, 0.38, 0.26),
 	Color(0.98, 0.82, 0.70), Color(0.80, 0.60, 0.42)]
@@ -27,9 +26,19 @@ const RIGHT_HAND_LOCAL := Vector3(0.19, HAND_Y, -0.14)
 const HEAD_LOCAL := Vector3(0, 0.34, 0.15)
 
 const GRAB_RADIUS := 0.09         # distance au tas pour pouvoir saisir une carte
-const SLAP_RADIUS := 0.15         # distance au centre pour pouvoir taper
+const SLAP_RADIUS := 0.2          # distance au centre pour pouvoir taper
 const PLAY_DRAG_DISTANCE := 0.07  # mouvement minimal vers le centre pour jeter la carte
-const CAMERA_SWAY := Vector2(0.10, 0.06)  # amplitude (radians) du suivi de la souris
+const CAMERA_SWAY := Vector2(0.22, 0.13)  # amplitude (radians) du regard qui suit la main
+const HAND_SPEED := 0.0011        # déplacement de la main (mètres) par pixel de souris
+const SWAY_HAND_RANGE := 0.6     # écart de la main (mètres) qui donne le regard maximal
+const PILE_SPREAD_MIN := 0.03     # dispersion des cartes au centre : rayon au début...
+const PILE_SPREAD_MAX := 0.12     # ...et rayon maximal, atteint après quelques cartes
+const SHAKE_MAX_OFFSET := 0.05    # tremblement maximal de la caméra (mètres)
+const SHAKE_MAX_ANGLE := 0.07     # et en rotation (radians)
+const TRAUMA_DECAY := 1.1         # vitesse de retour au calme après les tapes
+const TRAUMA_SLAP := 0.35         # tremblement ajouté par une tape adverse...
+const TRAUMA_HUMAN_SLAP := 0.45   # ...et par la tienne
+const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
 var server: GameServer
@@ -51,7 +60,7 @@ var center_cards: Array[Node3D] = []
 var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
 var _sway := Vector2.ZERO
-var _shake := 0.0
+var _trauma := 0.0   # intensité du tremblement (0 à 1), les tapes s'additionnent
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
 var _light_aim := Vector3.ZERO
@@ -59,6 +68,7 @@ var _light_aim_goal := Vector3.ZERO
 
 var _held_card: Node3D = null
 var _grab_point := Vector3.ZERO
+var _hand_target := Vector3.ZERO
 var _human_slapped := false
 var _turn_player := -1
 var _turn_left := 0.0
@@ -99,9 +109,10 @@ func _ready() -> void:
 		var bot := BotPlayer.new()
 		bot.name = "Bot%d" % i
 		add_child(bot)
-		bot.setup(i, server, BOT_REACTIONS[i])
+		bot.setup(i, server)
 
-	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
+	_hand_target = _rest_pos(HUMAN)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	server.start_game.call_deferred(SEATS)
 
 
@@ -303,7 +314,7 @@ func _build_hud() -> void:
 	hud_message.offset_bottom = -200
 	var help := _hud_label(layer, 18, Control.PRESET_BOTTOM_WIDE, HORIZONTAL_ALIGNMENT_CENTER)
 	help.offset_top = -40
-	help.text = "Clic gauche sur ton tas puis glisse vers le centre : jouer    |    Clic droit sur le tas du centre : taper    |    Échap : libérer la souris"
+	help.text = "Clic gauche sur ton tas puis glisse vers le centre : jouer    |    Clic droit sur le tas du centre : taper    |    Échap : libérer la souris (clic pour reprendre)"
 
 
 func _hud_label(layer: CanvasLayer, size: int, preset: Control.LayoutPreset, align: HorizontalAlignment) -> Label:
@@ -334,17 +345,20 @@ func _process(delta: float) -> void:
 	_refresh_hud()
 
 
+# La caméra regarde là où pointe la main droite, et tremble selon l'intensité des tapes.
 func _update_camera(delta: float) -> void:
-	var viewport := get_viewport()
-	var size := viewport.get_visible_rect().size
-	var mouse := viewport.get_mouse_position()
-	var target := Vector2(mouse.x / size.x * 2.0 - 1.0, mouse.y / size.y * 2.0 - 1.0)
-	target = target.clamp(Vector2(-1, -1), Vector2(1, 1))
+	# Main au repos = regard neutre (cadrage de base).
+	var offset := _hand_target - _rest_pos(HUMAN)
+	var target := (Vector2(offset.x, offset.z) / SWAY_HAND_RANGE).clamp(Vector2(-1, -1), Vector2(1, 1))
 	_sway = _sway.lerp(target, minf(1.0, delta * 6.0))
+	var shake := _trauma * _trauma
+	var roll := randf_range(-1, 1) * SHAKE_MAX_ANGLE * shake
+	var pitch := randf_range(-1, 1) * SHAKE_MAX_ANGLE * shake
 	camera.basis = Basis(Vector3.UP, -_sway.x * CAMERA_SWAY.x) * _camera_base \
-		* Basis(Vector3.RIGHT, -_sway.y * CAMERA_SWAY.y)
-	camera.position = _camera_pos + Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * _shake
-	_shake = move_toward(_shake, 0.0, delta * 0.08)
+		* Basis(Vector3.RIGHT, -_sway.y * CAMERA_SWAY.y + pitch) * Basis(Vector3.BACK, roll)
+	camera.position = _camera_pos + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) \
+		* SHAKE_MAX_OFFSET * shake
+	_trauma = maxf(0.0, _trauma - delta * TRAUMA_DECAY)
 
 
 func _update_turn_light(delta: float) -> void:
@@ -355,16 +369,21 @@ func _update_turn_light(delta: float) -> void:
 
 
 func _update_human_hand(delta: float) -> void:
+	var hand := right_hands[HUMAN]
+	if hand_locked[HUMAN]:
+		# Pendant une animation, la cible suit la main pour éviter un saut ensuite.
+		_hand_target = Vector3(hand.global_position.x, HAND_Y, hand.global_position.z)
+		return
+	hand.global_position = hand.global_position.lerp(_hand_target, minf(1.0, delta * 25.0))
+
+
+# Un même mouvement de souris déplace la main de la même distance sur la table,
+# quelle que soit la profondeur.
+func _move_hand_target(relative: Vector2) -> void:
 	if hand_locked[HUMAN]:
 		return
-	var hit = _mouse_on_table()
-	if hit == null:
-		return
-	var target := Vector3(
-		clampf(hit.x, TABLE_LIMITS.position.x, TABLE_LIMITS.end.x), HAND_Y,
-		clampf(hit.z, TABLE_LIMITS.position.y, TABLE_LIMITS.end.y))
-	var hand := right_hands[HUMAN]
-	hand.global_position = hand.global_position.lerp(target, minf(1.0, delta * 20.0))
+	_hand_target.x = clampf(_hand_target.x + relative.x * HAND_SPEED, TABLE_LIMITS.position.x, TABLE_LIMITS.end.x)
+	_hand_target.z = clampf(_hand_target.z + relative.y * HAND_SPEED, TABLE_LIMITS.position.y, TABLE_LIMITS.end.y)
 
 
 func _refresh_hud() -> void:
@@ -388,7 +407,12 @@ func _show_message(text: String, duration := 2.5) -> void:
 # --- Contrôles du joueur ---------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		_move_hand_target(event.relative)
+	elif event is InputEventMouseButton and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		if event.pressed:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED  # un clic reprend le contrôle de la main
+	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
 				_try_grab()
@@ -400,42 +424,27 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_R and _game_over:
 			get_tree().reload_current_scene()
 		elif event.keycode == KEY_ESCAPE:
-			if Input.mouse_mode == Input.MOUSE_MODE_CONFINED_HIDDEN:
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			else:
-				Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
-
-
-# Point de la table sous le curseur (Vector3), ou null.
-func _mouse_on_table():
-	var mouse := get_viewport().get_mouse_position()
-	var origin := camera.project_ray_origin(mouse)
-	var direction := camera.project_ray_normal(mouse)
-	return Plane(Vector3.UP, HAND_Y).intersects_ray(origin, direction)
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _try_grab() -> void:
 	if _turn_player != HUMAN or _held_card != null or hand_locked[HUMAN] or counts[HUMAN] == 0:
 		return
-	var hit = _mouse_on_table()
-	if hit == null:
-		return
 	var deck := _deck_top(HUMAN)
-	if Vector2(hit.x - deck.x, hit.z - deck.z).length() > GRAB_RADIUS:
+	if Vector2(_hand_target.x - deck.x, _hand_target.z - deck.z).length() > GRAB_RADIUS:
 		return
 	_held_card = _make_card()
 	right_hands[HUMAN].add_child(_held_card)
 	_held_card.position = Vector3(0, 0.03, -0.02)
-	_held_card.rotation = Vector3(0, 0, PI)  # face cachée
-	_grab_point = hit
+	_held_card.rotation = Vector3(PI, 0, 0)  # face cachée
+	_grab_point = _hand_target
 
 
 func _try_release() -> void:
 	if _held_card == null:
 		return
-	var hit = _mouse_on_table()
 	var center := Vector3(0, HAND_Y, 0)
-	if hit != null and hit.distance_to(center) < _grab_point.distance_to(center) - PLAY_DRAG_DISTANCE:
+	if _hand_target.distance_to(center) < _grab_point.distance_to(center) - PLAY_DRAG_DISTANCE:
 		server.request_play(HUMAN)  # si accepté, _on_card_played récupère la carte tenue
 	_drop_held_card()
 
@@ -449,8 +458,7 @@ func _drop_held_card() -> void:
 func _try_slap() -> void:
 	if hand_locked[HUMAN]:
 		return
-	var hit = _mouse_on_table()
-	if hit == null or Vector2(hit.x, hit.z).length() > SLAP_RADIUS:
+	if Vector2(_hand_target.x, _hand_target.z).length() > SLAP_RADIUS:
 		return
 	_drop_held_card()
 	_human_slapped = false
@@ -485,6 +493,7 @@ func _on_card_played(player: int, card: int, center_count: int) -> void:
 	counts[player] -= 1
 	_update_stack(player)
 
+	var seat_yaw := seat_roots[player].rotation.y
 	var node: Node3D
 	if player == HUMAN and _held_card != null:
 		node = _held_card
@@ -494,17 +503,20 @@ func _on_card_played(player: int, card: int, center_count: int) -> void:
 		node = _make_card()
 		add_child(node)
 		node.global_position = right_hands[player].global_position + Vector3(0, 0.03, 0)
-		node.rotation = Vector3(0, seat_roots[player].rotation.y, PI)
 	_set_card_face(node, card)
 	center_cards.append(node)
 
+	# La carte atterrit de plus en plus loin du centre à mesure que le tas grossit.
+	var spread := lerpf(PILE_SPREAD_MIN, PILE_SPREAD_MAX, clampf(center_count / 6.0, 0.0, 1.0))
+	var landing := Vector2.from_angle(randf() * TAU) * spread * sqrt(randf())
 	var start := node.global_position
-	var end := Vector3(randf_range(-0.02, 0.02), center_count * CARD_T + 0.001, randf_range(-0.02, 0.02))
-	var tw := node.create_tween().set_parallel()
-	tw.tween_method(func(t: float):
-		node.global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.07,
+	var end := Vector3(landing.x, center_count * CARD_T + 0.001, landing.y)
+	var end_yaw := seat_yaw + randf_range(-0.8, 0.8)
+	# Retournement vers l'avant : le bord éloigné se lève, la face se montre aux adversaires.
+	node.create_tween().tween_method(func(t: float):
+		node.global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.09
+		node.global_basis = Basis(Vector3.UP, lerp_angle(seat_yaw, end_yaw, t)) * Basis(Vector3.RIGHT, PI * (1.0 - t)),
 		0.0, 1.0, GameServer.CARD_TRAVEL)
-	tw.tween_property(node, "rotation", Vector3(0, randf_range(-0.4, 0.4), 0), GameServer.CARD_TRAVEL)
 
 	if player != HUMAN:
 		var hand := right_hands[player]
@@ -520,39 +532,25 @@ func _on_slap_registered(player: int, order: int) -> void:
 	_animate_slap(player, order, true)
 
 
-func _on_pile_taken(player: int, count: int, reason: String) -> void:
+func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 	_turn_player = -1
-	if player == HUMAN:
-		_drop_held_card()
-	var who: String = NAMES[player]
-	if reason == "timeout" and count == 0:
-		_show_message("Temps écoulé ! %s" % ("Tu passes ton tour." if player == HUMAN else who + " passe son tour."))
-	elif reason == "timeout":
-		if player == HUMAN:
-			_show_message("Temps écoulé ! Tu ramasses %d cartes." % count)
-		else:
-			_show_message("%s : temps écoulé ! %d cartes ramassées." % [who, count])
-	elif player == HUMAN:
-		_show_message("Tu as tapé en dernier ! Tu ramasses %d cartes." % count)
-	else:
-		_show_message("%s a tapé en dernier et ramasse %d cartes !" % [who, count])
+	_drop_held_card()
+	var takers: Array = shares.keys()
+	_show_message(_pile_message(shares, reason))
 
-	# Les cartes du centre volent vers le tas du perdant.
-	var target := _deck_top(player)
+	# Les cartes du centre explosent vers le haut en tournoyant, puis plongent
+	# vers le tas de ceux qui ramassent (réparties une par une s'ils sont plusieurs).
 	var cards := center_cards.duplicate()
 	center_cards.clear()
-	var stagger := minf(0.03, 0.6 / maxf(1.0, cards.size()))
+	var stagger := minf(0.05, 0.7 / maxf(1.0, cards.size()))
 	for k in cards.size():
-		var node: Node3D = cards[k]
-		var tw := node.create_tween()
-		tw.tween_interval(0.35 + k * stagger)
-		tw.tween_property(node, "global_position", target, 0.25)
-		tw.tween_callback(node.queue_free)
+		_fly_to_deck(cards[k], takers[k % takers.size()], 0.35 + k * stagger)
 	var done := create_tween()
-	done.tween_interval(0.35 + cards.size() * stagger + 0.25)
+	done.tween_interval(0.35 + cards.size() * stagger + PICKUP_FLIGHT)
 	done.tween_callback(func():
-		counts[player] += count
-		_update_stack(player))
+		for p in takers:
+			counts[p] += shares[p]
+			_update_stack(p))
 
 	# Les mains posées sur le tas reviennent.
 	for p in SEATS:
@@ -597,11 +595,53 @@ func _animate_slap(p: int, order: int, stay: bool) -> void:
 	var tw := _hand_tween(p)
 	tw.tween_property(hand, "global_position", raised, 0.07).set_ease(Tween.EASE_OUT)
 	tw.tween_property(hand, "global_position", target, 0.07).set_ease(Tween.EASE_IN)
-	tw.tween_callback(func(): _shake = maxf(_shake, 0.012 if p == HUMAN else 0.005))
+	# Chaque tape ajoute du tremblement : des tapes simultanées s'additionnent.
+	tw.tween_callback(func(): _trauma = minf(1.0, _trauma + (TRAUMA_HUMAN_SLAP if p == HUMAN else TRAUMA_SLAP)))
 	if not stay:
 		tw.tween_interval(0.25)
 		tw.tween_property(hand, "global_position", _rest_pos(p), 0.2)
 		tw.tween_callback(func(): hand_locked[p] = false)
+
+
+func _fly_to_deck(node: Node3D, p: int, delay: float) -> void:
+	var start := node.global_position
+	var target := _deck_top(p)
+	# Point de contrôle haut au-dessus du centre : la carte monte haut avant de plonger.
+	var control := Vector3(randf_range(-0.15, 0.15), randf_range(0.8, 1.2), randf_range(-0.15, 0.15))
+	var start_rot := node.global_basis.get_rotation_quaternion()
+	var end_rot := (Basis(Vector3.UP, seat_roots[p].rotation.y) * Basis(Vector3.RIGHT, PI)).get_rotation_quaternion()
+	var spin_axis := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)).normalized()
+	var spins := float(randi_range(2, 4)) * TAU  # tours complets : l'orientation finale est respectée
+	var tw := node.create_tween()
+	tw.tween_interval(delay)
+	tw.tween_method(func(t: float):
+		var u := 1.0 - t
+		node.global_position = start * u * u + control * 2.0 * u * t + target * t * t
+		node.global_basis = Basis(spin_axis, spins * t) * Basis(start_rot.slerp(end_rot, t))
+		node.scale = Vector3.ONE * (1.0 + 0.3 * sin(t * PI)),
+		0.0, 1.0, PICKUP_FLIGHT).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_callback(node.queue_free)
+
+
+func _pile_message(shares: Dictionary, reason: String) -> String:
+	var takers: Array = shares.keys()
+	var total := 0
+	for p in takers:
+		total += shares[p]
+	if takers.size() > 1:
+		var names: Array[String] = []
+		for p in takers:
+			names.append(NAMES[p])
+		var listed := ", ".join(names.slice(0, -1)) + " et " + names[-1]
+		return "%s n'ont pas tapé : ils se partagent %d cartes !" % [listed, total]
+	var p: int = takers[0]
+	if reason == "timeout" and total == 0:
+		return "Temps écoulé ! " + ("Tu passes ton tour." if p == HUMAN else NAMES[p] + " passe son tour.")
+	if reason == "timeout":
+		return ("Temps écoulé ! Tu ramasses %d cartes." % total) if p == HUMAN \
+			else ("%s : temps écoulé ! %d cartes ramassées." % [NAMES[p], total])
+	return ("Tu as tapé en dernier ! Tu ramasses %d cartes." % total) if p == HUMAN \
+		else ("%s a tapé en dernier et ramasse %d cartes !" % [NAMES[p], total])
 
 
 func _update_stack(p: int) -> void:
