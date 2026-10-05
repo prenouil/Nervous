@@ -75,7 +75,7 @@ Deux cartes consécutives forment une paire si :
 ## Ordinateurs
 
 - Temps pour jouer sa carte : **aléatoire entre 0,6 et 1,5 s**.
-- **Hésitation** : si les deux cartes du dessus se ressemblent sans former une paire (valeurs voisines à 1 près, ou même symbole : pique, cœur, carreau, trèfle), malus aléatoire de 0,1 à 1 s pour jouer.
+- **Hésitation** : si les deux cartes du dessus se ressemblent sans former une paire (valeurs voisines à 1 près **et** même symbole : pique, cœur, carreau, trèfle), malus aléatoire de 0,1 à 1 s pour jouer.
 - **Erreur** : dans ce même cas, chaque ordinateur (sauf celui qui vient de jouer la carte) a **1 chance sur 20** de taper par erreur. Plus il y a d'ordinateurs, plus une erreur est probable.
 - Temps de réaction pour taper : **aléatoire** à chaque paire, de 0,25 à 0,8 s après l'arrivée de la carte.
 - Celui qui a joué la carte la voit mal : **malus de réaction de 0,2 à 0,5 s**.

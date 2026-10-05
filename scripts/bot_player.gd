@@ -59,7 +59,7 @@ func _on_card_played(player: int, card: int, _center_count: int) -> void:
 		_schedule_slap(GameServer.CARD_TRAVEL + _reaction_time())
 
 
-# Deux cartes qui se ressemblent sans former une paire (valeurs voisines ou même symbole)
+# Deux cartes qui se ressemblent sans former une paire (valeurs voisines et même symbole)
 # font hésiter : faut-il taper ?
 func _top_cards_look_alike() -> bool:
 	var n := _center.size()
@@ -69,7 +69,7 @@ func _top_cards_look_alike() -> bool:
 	var b := _center[n - 2]
 	if Cards.forms_pair(a, b):
 		return false
-	return absi(Cards.rank(a) - Cards.rank(b)) <= CLOSE_RANKS or Cards.suit(a) == Cards.suit(b)
+	return absi(Cards.rank(a) - Cards.rank(b)) <= CLOSE_RANKS and Cards.suit(a) == Cards.suit(b)
 
 
 func _reaction_time() -> float:
