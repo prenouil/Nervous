@@ -33,12 +33,16 @@ const HAND_SPEED := 0.0011        # déplacement de la main (mètres) par pixel 
 const SWAY_HAND_RANGE := 0.6     # écart de la main (mètres) qui donne le regard maximal
 const PILE_SPREAD_MIN := 0.03     # dispersion des cartes au centre : rayon au début...
 const PILE_SPREAD_MAX := 0.12     # ...et rayon maximal, atteint après quelques cartes
-const SHAKE_MAX_OFFSET := 0.05    # tremblement maximal de la caméra (mètres)
-const SHAKE_MAX_ANGLE := 0.07     # et en rotation (radians)
+const SHAKE_OFFSET := 0.06        # tremblement de la caméra (mètres) pour une intensité de 1
+const SHAKE_ANGLE := 0.12         # et en rotation (radians)
 const TRAUMA_DECAY := 1.1         # vitesse de retour au calme après les tapes
 const LIGHT_FOLLOW_SPEED := 2.2   # plus c'est bas, plus la lumière de tour est en retard
-const TRAUMA_SLAP := 0.35         # tremblement ajouté par une tape adverse...
-const TRAUMA_HUMAN_SLAP := 0.45   # ...et par la tienne
+const TRAUMA_SLAP := 0.5          # tremblement ajouté par une tape adverse...
+const TRAUMA_HUMAN_SLAP := 0.6    # ...et par la tienne
+const TRAUMA_MAX := 3.0           # les tapes se cumulent jusqu'à cette intensité
+const HEAD_RETARGET := Vector2(0.3, 1.2)  # intervalle (s) entre deux changements de regard des visages
+const HEAD_CHAOS_CHANCE := 0.2    # chance de regarder ailleurs, au hasard
+const HEAD_TURN_SPEED := 7.0      # vitesse de rotation des visages
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
@@ -57,11 +61,14 @@ var counts: Array[int] = []
 var hand_locked: Array[bool] = []
 var hand_tweens: Array = []
 var center_cards: Array[Node3D] = []
+var heads: Array[Node3D] = []        # visages des ordinateurs (null pour le joueur humain)
+var _head_targets: Array[Vector3] = []
+var _head_retarget: Array[float] = []
 
 var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
 var _sway := Vector2.ZERO
-var _trauma := 0.0   # intensité du tremblement (0 à 1), les tapes s'additionnent
+var _trauma := 0.0   # intensité du tremblement, les tapes s'additionnent
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
 var _light_aim := Vector3.ZERO
@@ -89,6 +96,9 @@ func _ready() -> void:
 		counts.append(0)
 		hand_locked.append(false)
 		hand_tweens.append(null)
+		heads.append(null)
+		_head_targets.append(Vector3.ZERO)
+		_head_retarget.append(0.0)
 
 	_build_environment()
 	_build_table()
@@ -212,6 +222,7 @@ func _build_seat(i: int) -> void:
 		var head := _make_head(SKIN_COLORS[i], HAIR_COLORS[i])
 		head.position = HEAD_LOCAL
 		root.add_child(head)
+		heads[i] = head
 
 
 func _make_hand(skin: Color, is_left: bool) -> Node3D:
@@ -337,6 +348,7 @@ func _process(delta: float) -> void:
 	_update_camera(delta)
 	_update_turn_light(delta)
 	_update_human_hand(delta)
+	_update_heads(delta)
 
 	if _turn_player >= 0:
 		_turn_left = maxf(0.0, _turn_left - delta)
@@ -353,13 +365,13 @@ func _update_camera(delta: float) -> void:
 	var offset := _hand_target - _rest_pos(HUMAN)
 	var target := (Vector2(offset.x, offset.z) / SWAY_HAND_RANGE).clamp(Vector2(-1, -1), Vector2(1, 1))
 	_sway = _sway.lerp(target, minf(1.0, delta * 6.0))
-	var shake := _trauma * _trauma
-	var roll := randf_range(-1, 1) * SHAKE_MAX_ANGLE * shake
-	var pitch := randf_range(-1, 1) * SHAKE_MAX_ANGLE * shake
+	var shake := pow(_trauma, 1.5)
+	var roll := randf_range(-1, 1) * SHAKE_ANGLE * shake
+	var pitch := randf_range(-1, 1) * SHAKE_ANGLE * shake
 	camera.basis = Basis(Vector3.UP, -_sway.x * CAMERA_SWAY.x) * _camera_base \
 		* Basis(Vector3.RIGHT, -_sway.y * CAMERA_SWAY.y + pitch) * Basis(Vector3.BACK, roll)
 	camera.position = _camera_pos + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) \
-		* SHAKE_MAX_OFFSET * shake
+		* SHAKE_OFFSET * shake
 	_trauma = maxf(0.0, _trauma - delta * TRAUMA_DECAY)
 
 
@@ -387,6 +399,33 @@ func _move_hand_target(relative: Vector2) -> void:
 		return
 	_hand_target.x = clampf(_hand_target.x + relative.x * HAND_SPEED, TABLE_LIMITS.position.x, TABLE_LIMITS.end.x)
 	_hand_target.z = clampf(_hand_target.z + relative.y * HAND_SPEED, TABLE_LIMITS.position.y, TABLE_LIMITS.end.y)
+
+
+# Les visages regardent surtout le joueur actif, parfois le tas, parfois n'importe où.
+func _update_heads(delta: float) -> void:
+	for p in SEATS:
+		var head := heads[p]
+		if head == null:
+			continue
+		_head_retarget[p] -= delta
+		if _head_retarget[p] <= 0.0:
+			_head_retarget[p] = randf_range(HEAD_RETARGET.x, HEAD_RETARGET.y)
+			_head_targets[p] = _pick_head_target(p)
+		var direction := _head_targets[p] - head.global_position
+		if direction.length() < 0.01:
+			continue
+		var target_basis := Basis.looking_at(direction, Vector3.UP)
+		head.global_basis = head.global_basis.slerp(target_basis, minf(1.0, delta * HEAD_TURN_SPEED))
+
+
+func _pick_head_target(p: int) -> Vector3:
+	var roll := randf()
+	if roll < HEAD_CHAOS_CHANCE:
+		# Regard perdu : n'importe où devant soi, plus ou moins haut.
+		return seat_roots[p].to_global(Vector3(randf_range(-0.8, 0.8), randf_range(-0.1, 0.6), randf_range(-1.2, -0.3)))
+	if _turn_player >= 0 and roll < 0.8:
+		return right_hands[_turn_player].global_position + Vector3(0, 0.05, 0)
+	return Vector3(randf_range(-0.05, 0.05), 0, randf_range(-0.05, 0.05))  # le tas
 
 
 func _refresh_hud() -> void:
@@ -626,7 +665,7 @@ func _animate_slap(p: int, order: int, stay: bool) -> void:
 	tw.tween_property(hand, "global_position", raised, 0.07).set_ease(Tween.EASE_OUT)
 	tw.tween_property(hand, "global_position", target, 0.07).set_ease(Tween.EASE_IN)
 	# Chaque tape ajoute du tremblement : des tapes simultanées s'additionnent.
-	tw.tween_callback(func(): _trauma = minf(1.0, _trauma + (TRAUMA_HUMAN_SLAP if p == HUMAN else TRAUMA_SLAP)))
+	tw.tween_callback(func(): _trauma = minf(TRAUMA_MAX, _trauma + (TRAUMA_HUMAN_SLAP if p == HUMAN else TRAUMA_SLAP)))
 	if not stay:
 		tw.tween_interval(0.25)
 		tw.tween_property(hand, "global_position", _rest_pos(p), 0.2)
