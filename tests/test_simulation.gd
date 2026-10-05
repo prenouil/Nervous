@@ -10,10 +10,12 @@ var server: GameServer
 var elapsed := 0.0
 var plays := 0
 var pickups := 0
+var pairs := 0
+var covered := 0
 
 
 func _initialize() -> void:
-	Engine.time_scale = 20.0
+	Engine.time_scale = float(OS.get_environment("SIM_SPEED")) if OS.has_environment("SIM_SPEED") else 20.0
 	server = GameServer.new()
 	root.add_child(server)
 	for i in 4:
@@ -27,10 +29,12 @@ func _initialize() -> void:
 		pickups += 1
 		print("  ramassage %s (%s) -> %s" % [shares, reason, server.rules.counts()])
 		_check_cards())
+	server.slap_window_opened.connect(func(): pairs += 1)
+	server.slap_window_closed.connect(func(): covered += 1)
 	server.game_over.connect(func(loser):
 		_check_cards()
-		print("OK : partie terminée en %d cartes jouées, %d ramassages. Perdant : joueur %d. Tas : %s"
-			% [plays, pickups, loser, server.rules.counts()])
+		print("OK : partie terminée en %d cartes jouées, %d ramassages, %d paires dont %d recouvertes. Perdant : joueur %d. Tas : %s"
+			% [plays, pickups, pairs, covered, loser, server.rules.counts()])
 		quit(0 if loser >= 0 else 1))
 	server.start_game.call_deferred(4)
 

@@ -36,6 +36,7 @@ const PILE_SPREAD_MAX := 0.12     # ...et rayon maximal, atteint après quelques
 const SHAKE_MAX_OFFSET := 0.05    # tremblement maximal de la caméra (mètres)
 const SHAKE_MAX_ANGLE := 0.07     # et en rotation (radians)
 const TRAUMA_DECAY := 1.1         # vitesse de retour au calme après les tapes
+const LIGHT_FOLLOW_SPEED := 2.2   # plus c'est bas, plus la lumière de tour est en retard
 const TRAUMA_SLAP := 0.35         # tremblement ajouté par une tape adverse...
 const TRAUMA_HUMAN_SLAP := 0.45   # ...et par la tienne
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
@@ -362,7 +363,8 @@ func _update_camera(delta: float) -> void:
 
 
 func _update_turn_light(delta: float) -> void:
-	var t := minf(1.0, delta * 5.0)
+	# La lumière traîne derrière le joueur actif et essaie de le rattraper.
+	var t := minf(1.0, delta * LIGHT_FOLLOW_SPEED)
 	_light_pos = _light_pos.lerp(_light_goal, t)
 	_light_aim = _light_aim.lerp(_light_aim_goal, t)
 	turn_light.look_at_from_position(_light_pos, _light_aim)
@@ -483,7 +485,7 @@ func _on_turn_started(player: int, duration: float) -> void:
 		_drop_held_card()
 		# La main droite de l'ordinateur va chercher la carte sur son tas.
 		var tw := _hand_tween(player)
-		tw.tween_property(right_hands[player], "global_position", _deck_top(player) + Vector3(0, 0.04, 0), 0.3)
+		tw.tween_property(right_hands[player], "global_position", _deck_top(player) + Vector3(0, 0.04, 0), 0.12)
 	_light_goal = seat_roots[player].global_position * 0.55 + Vector3(0, 1.3, 0)
 	_light_aim_goal = seat_roots[player].to_global(Vector3(0, 0, -0.1))
 

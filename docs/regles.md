@@ -23,6 +23,10 @@ Jeu de cartes de table en 3D, vu à la première personne. Jeu de rapidité insp
 - Geste du joueur humain : pointer son tas avec la souris, **maintenir le clic gauche**, faire un petit mouvement vers le centre, **relâcher**.
 - **Timer : le joueur a 5 secondes pour jouer sa carte.** S'il ne joue pas à temps, **il ramasse le tas du centre**, puis c'est au joueur suivant (choix provisoire).
 - Un joueur qui n'a plus de cartes passe son tour pour retourner une carte, mais **continue de taper**.
+- **Pas de temps mort** : dès qu'une carte est jouée, le joueur suivant peut jouer aussitôt.
+- Une paire visible **n'arrête pas le jeu**. Si une carte la recouvre (à l'atterrissage) avant que quelqu'un tape, **la paire est perdue**.
+- Dès qu'un joueur tape, sa main bloque le tas : plus personne ne joue, les autres ont 3 secondes pour taper.
+- La lumière de tour **suit le joueur actif avec du retard** : elle accentue le chaos de la partie.
 
 ## Taper sur le tas
 
@@ -52,7 +56,9 @@ Règle essentielle du jeu, qui couvre plusieurs cas : **[À DÉFINIR]**.
 
 ## Ordinateurs
 
-- Temps de réaction **aléatoire** à chaque paire, dans une fourchette raisonnable (0,25 à 0,8 s).
+- Temps pour jouer sa carte : **aléatoire entre 0,1 et 1 s**.
+- **Hésitation** : si les deux cartes du dessus se ressemblent sans former une paire (valeurs proches à 2 près, ou même couleur rouge/noir), malus aléatoire de 0,1 à 1 s.
+- Temps de réaction pour taper : **aléatoire** à chaque paire, de 0,25 à 0,8 s après l'arrivée de la carte.
 - Ils peuvent faire des erreurs, par exemple taper sans raison.
 - Comportement à affiner plus tard.
 
