@@ -7,10 +7,10 @@ const Cards = preload("res://scripts/cards.gd")
 
 const PLAY_DELAY := Vector2(0.6, 1.5)       # temps pour jouer sa carte
 const HESITATION := Vector2(0.1, 1.0)       # malus quand les deux cartes du dessus se ressemblent
-const CLOSE_RANKS := 1                      # écart de valeur considéré comme « proche »
+const CLOSE_RANKS := 2                      # écart de valeur considéré comme « proche »
 const REACTION_RANGE := Vector2(0.25, 0.8)  # temps de réaction pour taper, après l'arrivée de la carte
 const OWN_CARD_MALUS := Vector2(0.2, 0.5)   # celui qui a joué la carte la voit mal : il réagit plus tard
-const MISTAKE_CHANCE := 0.05                # chance (par ordinateur) de taper par erreur quand les cartes se ressemblent
+const MISTAKE_CHANCE := 0.1                 # chance (par ordinateur) de taper par erreur quand les cartes se ressemblent
 const FOLLOW_CHANCE := 0.1                  # chance de suivre par réflexe une tape par erreur, retirée à chaque tape
 const FOLLOW_CHANCE_OWN_CARD := 0.2         # idem pour celui qui a joué la carte (il l'a mal vue)
 
