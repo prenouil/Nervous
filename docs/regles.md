@@ -89,7 +89,7 @@ Deux cartes consécutives forment une paire si :
 - **La main droite suit la souris** au-dessus de la table, et monte pour passer par-dessus le tas de la main gauche.
 - **La main gauche** (qui tient le tas) se balance doucement dans un petit cercle, comme un balancier.
 - **La caméra suit aussi la souris, avec une faible amplitude**, comme si le joueur regardait l'endroit qu'il pointe.
-- **Tension** : plus le tas du centre grossit, plus la tête se **penche au-dessus de la table** et plus l'écran **tremble légèrement**. Tout revient en place quand le tas est ramassé.
+- **Tension** : plus le tas du centre grossit, plus la tête se **penche au-dessus de la table**. À partir de la **10e carte**, toutes les **mains tremblent**, de plus en plus. Tout revient en place quand le tas est ramassé.
 
 ## Ordinateurs
 

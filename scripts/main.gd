@@ -41,7 +41,8 @@ const TRAUMA_MAX := 3.0           # les tapes se cumulent jusqu'à cette intensi
 const SWAY_NEUTRAL := Vector2(-0.08, 0.41)  # position de la main (x, z) pour laquelle la caméra regarde droit devant
 const TENSION_CARDS := 15.0       # nombre de cartes au centre pour une tension maximale
 const TENSION_LEAN := 0.16        # la tête se penche vers la table (mètres) à tension maximale
-const TENSION_SHAKE := 0.15       # petit tremblement permanent à tension maximale
+const TREMOR_FROM_CARD := 10     # les mains commencent à trembler à partir de cette carte au centre
+const TREMOR_MAX := 0.004         # tremblement des mains (mètres) à tension maximale
 const HEAD_RETARGET := Vector2(0.3, 1.2)  # intervalle (s) entre deux changements de regard des visages
 const HEAD_CHAOS_CHANCE := 0.2    # chance de regarder ailleurs, au hasard
 const HEAD_TURN_SPEED := 7.0      # vitesse de rotation des visages
@@ -82,6 +83,7 @@ var _camera_base := Basis()
 var _sway := Vector2.ZERO
 var _trauma := 0.0   # intensité du tremblement, les tapes s'additionnent
 var _tension := 0.0  # monte avec la taille du tas, retombe au ramassage
+var _tremor := 0.0   # tremblement des mains, à partir de la 10e carte
 var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
@@ -413,9 +415,9 @@ func _update_camera(delta: float) -> void:
 	var offset := Vector2(_hand_target.x, _hand_target.z) - SWAY_NEUTRAL
 	var target := (offset / SWAY_HAND_RANGE).clamp(Vector2(-1, -1), Vector2(1, 1))
 	_sway = _sway.lerp(target, minf(1.0, delta * 6.0))
-	# Plus le tas grossit, plus on se penche au-dessus de la table, et plus ça tremble.
+	# Plus le tas grossit, plus on se penche au-dessus de la table.
 	_tension = lerpf(_tension, clampf(center_cards.size() / TENSION_CARDS, 0.0, 1.0), minf(1.0, delta * 3.0))
-	var shake := pow(_trauma, 1.5) + _tension * TENSION_SHAKE
+	var shake := pow(_trauma, 1.5)
 	var roll := randf_range(-1, 1) * SHAKE_ANGLE * shake
 	var pitch := randf_range(-1, 1) * SHAKE_ANGLE * shake
 	camera.basis = Basis(Vector3.UP, -_sway.x * CAMERA_SWAY.x) * _camera_base \
@@ -458,6 +460,12 @@ func _update_other_hands(delta: float) -> void:
 # Une main qui touche le cercle pulse en rouge et tremble, d'autant plus qu'elle s'enfonce.
 func _update_hand_warnings() -> void:
 	var t := Time.get_ticks_msec() / 1000.0
+	# À partir de la 10e carte au centre, toutes les mains tremblent, de plus en plus.
+	var cards_over := center_cards.size() - TREMOR_FROM_CARD + 1
+	var tremor_goal := clampf(cards_over / (TENSION_CARDS - TREMOR_FROM_CARD + 1.0), 0.0, 1.0) if cards_over > 0 else 0.0
+	_tremor = lerpf(_tremor, tremor_goal, 0.1)
+	for p in SEATS:
+		(left_hands[p].get_node("Visual") as Node3D).position = _tremor_offset(p * 2, t) * TREMOR_MAX * _tremor
 	for p in SEATS:
 		var hand := right_hands[p]
 		var level := 0.0
@@ -467,7 +475,8 @@ func _update_hand_warnings() -> void:
 		if hand.has_meta("nervous"):
 			level = 1.0
 		var visual: Node3D = hand.get_node("Visual")
-		visual.position = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * WARNING_TREMBLE * level
+		visual.position = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * WARNING_TREMBLE * level \
+			+ _tremor_offset(p * 2 + 1, t) * TREMOR_MAX * _tremor
 		var pulse := (0.5 + 0.5 * sin(t * 18.0)) * level
 		for mesh: MeshInstance3D in visual.get_children():
 			(mesh.material_override as StandardMaterial3D).albedo_color = (SKIN_COLORS[p] as Color).lerp(WARNING_RED, pulse)
@@ -693,7 +702,6 @@ func _on_card_ejected(player: int, _card: int) -> void:
 		node.global_basis = Basis(spin_axis, t * TAU * 4.0) * start_basis,
 		0.0, 1.0, 0.7).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	tw.tween_callback(node.queue_free)
-	_show_message("Paire recouverte… mais tape à temps ! La carte est éjectée.", 1.5)
 	var done := create_tween()
 	done.tween_interval(0.7)
 	done.tween_callback(func():
@@ -1029,3 +1037,13 @@ func _deck_top(p: int) -> Vector3:
 
 func _rest_pos(p: int) -> Vector3:
 	return seat_roots[p].to_global(RIGHT_HAND_LOCAL)
+
+
+# Vibration fluide (somme de sinus) plutôt qu'un bruit aléatoire à chaque image ;
+# chaque main a son propre rythme.
+func _tremor_offset(index: int, t: float) -> Vector3:
+	var k := float(index) * 1.37
+	return Vector3(
+		sin(t * 23.0 + k) + 0.5 * sin(t * 41.0 + k * 2.1),
+		0.3 * sin(t * 29.0 + k * 0.7),
+		sin(t * 31.0 + k * 1.3) + 0.5 * sin(t * 47.0 + k * 0.4)) / 1.5
