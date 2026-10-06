@@ -89,13 +89,14 @@ Deux cartes consécutives forment une paire si :
 - **La main droite suit la souris** au-dessus de la table, et monte pour passer par-dessus le tas de la main gauche.
 - **La main gauche** (qui tient le tas) se balance doucement dans un petit cercle, comme un balancier.
 - **La caméra suit aussi la souris, avec une faible amplitude**, comme si le joueur regardait l'endroit qu'il pointe.
+- **Tension** : plus le tas du centre grossit, plus la tête se **penche au-dessus de la table** et plus l'écran **tremble légèrement**. Tout revient en place quand le tas est ramassé.
 
 ## Ordinateurs
 
 - Temps pour jouer sa carte : **aléatoire entre 0,6 et 1,5 s**.
 - **Hésitation** : si les deux cartes du dessus se ressemblent sans former une paire (valeurs proches à 2 près **et** même symbole : pique, cœur, carreau, trèfle), malus aléatoire de 0,1 à 1 s pour jouer.
 - **Erreur** : dans ce même cas, chaque ordinateur (sauf celui qui vient de jouer la carte) a **1 chance sur 10** de taper par erreur. Plus il y a d'ordinateurs, plus une erreur est probable.
-- Temps de réaction pour taper : **aléatoire** à chaque paire, de 0,25 à 0,8 s après l'arrivée de la carte.
+- Temps de réaction pour taper : **aléatoire** à chaque paire, de 0,25 à 1,8 s après l'arrivée de la carte.
 - Celui qui a joué la carte la voit mal : **malus de réaction de 0,2 à 0,5 s**.
 - **Réflexe** : quand quelqu'un tape alors que l'ordinateur ne voit pas de paire, il a **10 % de chances** de suivre, retirées **à chaque nouvelle tape** (plus il y a de tapeurs, plus il est tenté). 20 % pour celui qui a joué la carte, qui l'a mal vue.
 - **Tension** : quand les cartes se ressemblent, chaque ordinateur (sauf celui qui a joué) a 35 % de chances d'avancer la main jusqu'au cercle (avertissement visible), et 8 % de ces fois-là il franchit la ligne (nerveux s'il ne tape pas).

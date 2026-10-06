@@ -38,6 +38,10 @@ const LIGHT_FOLLOW_SPEED := 2.2   # plus c'est bas, plus la lumière de tour est
 const TRAUMA_SLAP := 0.5          # tremblement ajouté par une tape adverse...
 const TRAUMA_HUMAN_SLAP := 0.6    # ...et par la tienne
 const TRAUMA_MAX := 3.0           # les tapes se cumulent jusqu'à cette intensité
+const SWAY_NEUTRAL := Vector2(-0.08, 0.41)  # position de la main (x, z) pour laquelle la caméra regarde droit devant
+const TENSION_CARDS := 15.0       # nombre de cartes au centre pour une tension maximale
+const TENSION_LEAN := 0.16        # la tête se penche vers la table (mètres) à tension maximale
+const TENSION_SHAKE := 0.15       # petit tremblement permanent à tension maximale
 const HEAD_RETARGET := Vector2(0.3, 1.2)  # intervalle (s) entre deux changements de regard des visages
 const HEAD_CHAOS_CHANCE := 0.2    # chance de regarder ailleurs, au hasard
 const HEAD_TURN_SPEED := 7.0      # vitesse de rotation des visages
@@ -77,6 +81,8 @@ var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
 var _sway := Vector2.ZERO
 var _trauma := 0.0   # intensité du tremblement, les tapes s'additionnent
+var _tension := 0.0  # monte avec la taille du tas, retombe au ramassage
+var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
 var _light_aim := Vector3.ZERO
@@ -344,6 +350,7 @@ func _build_camera() -> void:
 	add_child(camera)
 	camera.look_at_from_position(Vector3(0, 0.6, SEAT_RADIUS + 0.35), Vector3(0, 0, -0.02))
 	_camera_pos = camera.position
+	_camera_forward = -camera.basis.z
 	_camera_base = camera.basis
 
 
@@ -402,17 +409,19 @@ func _process(delta: float) -> void:
 
 # La caméra regarde là où pointe la main droite, et tremble selon l'intensité des tapes.
 func _update_camera(delta: float) -> void:
-	# Main au repos = regard neutre (cadrage de base).
-	var offset := _hand_target - _rest_pos(HUMAN)
-	var target := (Vector2(offset.x, offset.z) / SWAY_HAND_RANGE).clamp(Vector2(-1, -1), Vector2(1, 1))
+	# Main en SWAY_NEUTRAL (un peu à gauche du centre) = regard droit devant.
+	var offset := Vector2(_hand_target.x, _hand_target.z) - SWAY_NEUTRAL
+	var target := (offset / SWAY_HAND_RANGE).clamp(Vector2(-1, -1), Vector2(1, 1))
 	_sway = _sway.lerp(target, minf(1.0, delta * 6.0))
-	var shake := pow(_trauma, 1.5)
+	# Plus le tas grossit, plus on se penche au-dessus de la table, et plus ça tremble.
+	_tension = lerpf(_tension, clampf(center_cards.size() / TENSION_CARDS, 0.0, 1.0), minf(1.0, delta * 3.0))
+	var shake := pow(_trauma, 1.5) + _tension * TENSION_SHAKE
 	var roll := randf_range(-1, 1) * SHAKE_ANGLE * shake
 	var pitch := randf_range(-1, 1) * SHAKE_ANGLE * shake
 	camera.basis = Basis(Vector3.UP, -_sway.x * CAMERA_SWAY.x) * _camera_base \
 		* Basis(Vector3.RIGHT, -_sway.y * CAMERA_SWAY.y + pitch) * Basis(Vector3.BACK, roll)
-	camera.position = _camera_pos + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) \
-		* SHAKE_OFFSET * shake
+	camera.position = _camera_pos + _camera_forward * TENSION_LEAN * _tension \
+		+ Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * SHAKE_OFFSET * shake
 	_trauma = maxf(0.0, _trauma - delta * TRAUMA_DECAY)
 
 
