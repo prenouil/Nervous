@@ -71,7 +71,7 @@ Deux cartes consécutives forment une paire si :
 - Une main droite qui **touche un peu le cercle** (moins de 2 cm) **pulse en rouge, tremble et grésille** (bruit discret d'électricité) : simple avertissement.
 - Une main qui **franchit la ligne** (plus de 2 cm) doit **taper dans les 0,5 s** (une feinte compte). Si le joueur ne tape pas à temps, **ou ramène sa main avant d'avoir tapé**, il est **nerveux** !
 - **Exception : jeter sa carte.** Pendant son tour, un joueur qui tient sa carte peut franchir la ligne impunément. Une fois la carte lâchée, il doit **ressortir du cercle dans la seconde**, sinon il est nerveux.
-- Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 2 s, une **voix crie « Nervous ! »**, et une **lumière rouge clignote** sur la main fautive.
+- Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 1 s, une **voix crie « Nervous ! »**, et une **lumière rouge clignote** sur la main fautive.
 - Pendant les **0,5 s** qui suivent, toute autre main qui franchit la ligne est aussi déclarée nerveuse.
 - Ensuite on l'explique (« Tu as été nerveux, tu perds ! ») et **les nerveux se partagent le tas**. Le premier nerveux joue la carte suivante (choix provisoire).
 - Après une feinte, la main du joueur ressort automatiquement juste hors du cercle.
@@ -135,7 +135,7 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 | Le tas grossit | battement de cœur, de plus en plus fort et rapide (70 à 140 par minute) à mesure que tu te penches |
 | Main qui touche le cercle | grésillement électrique discret, plus fort quand elle s'enfonce |
 | NERVOUS ! | une voix de synthèse crie « Nervous ! » (cri synthétisé de secours si aucune voix) |
-| Pendant la partie | musique d'ambiance douce en boucle (2 min) : nappes sur Lam7, Fa7M, Do7M, Sol6, basse feutrée, clochettes |
+| En permanence (dès le menu, sans jamais s'arrêter) | musique d'ambiance douce en boucle (2 min) : nappes sur Lam7, Fa7M, Do7M, Sol6, basse feutrée, clochettes |
 | Fin de partie | tous les effets s'arrêtent ; **défaite** : courte mélodie triste ; **victoire** : fanfare, applaudissements et cris de joie |
 
 ## Menu

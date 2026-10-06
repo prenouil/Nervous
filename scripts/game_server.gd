@@ -31,13 +31,15 @@ const SLAP_WINDOW := 3.0      # temps pour taper une paire visible, puis temps d
 # Verdict : on attend la fin du tremblement, puis les mains se retirent une à une
 # (dans l'ordre inverse des tapes), puis on laisse le temps de lire avant de distribuer.
 const SETTLE_TIME := 2.2         # fin du tremblement après les tapes
-const HAND_LIFT_INTERVAL := 0.55 # entre deux mains qui se retirent
+const HAND_LIFT_INTERVAL := 0.35 # entre deux mains qui se retirent
 const REVEAL_READ := 1.6         # temps de lecture du verdict
+const NERVOUS_SETTLE := 0.3      # après l'annonce NERVOUS, le verdict arrive presque aussitôt
+const NERVOUS_READ := 1.2        # et se lit plus vite
 const RESOLVE_DELAY := 1.9    # pause après un ramassage, le temps de l'animation
 const NERVOUS_GRACE := 0.5   # main qui franchit la ligne du cercle : temps pour taper
 const THROW_EXIT_GRACE := 1.0  # carte lâchée dans le cercle : temps pour en ressortir
 const NERVOUS_CONTAGION := 0.5  # après un premier nerveux, temps pendant lequel d'autres peuvent l'être aussi
-const NERVOUS_SHOW := 2.0    # durée de l'annonce « NERVOUS !!! » avant le verdict
+const NERVOUS_SHOW := 1.2    # durée de l'annonce « NERVOUS !!! » avant le verdict
 const PILE_SPREAD_MIN := 0.03 # dispersion des cartes au centre : rayon au début...
 const PILE_SPREAD_MAX := 0.12 # ...et rayon maximal, atteint après quelques cartes
 
@@ -238,7 +240,7 @@ func _resolve_nervous() -> void:
 	var shares := rules.give_center_to(losers, rng)
 	var slappers := 0
 	slap_judged.emit(shares, "nervous", 0)
-	_after(reveal_time(slappers), func():
+	_after(reveal_time(slappers, "nervous"), func():
 		pile_taken.emit(shares, "nervous")
 		_after(RESOLVE_DELAY, func(): _continue_with(losers[0])))
 
@@ -329,7 +331,7 @@ func _resolve_slap() -> void:
 	_center_layout.clear()
 	var shares := rules.give_center_to(losers, rng)
 	slap_judged.emit(shares, reason, 2 if _slap_valid else 1)
-	_after(reveal_time(slappers), func():
+	_after(reveal_time(slappers, reason), func():
 		pile_taken.emit(shares, reason)
 		_after(RESOLVE_DELAY, func(): _continue_with(losers[0])))
 
@@ -374,8 +376,14 @@ func _after(seconds: float, callback: Callable) -> void:
 
 
 # Durée entre le verdict et la distribution du tas.
-static func reveal_time(slappers: int) -> float:
-	return SETTLE_TIME + slappers * HAND_LIFT_INTERVAL + REVEAL_READ
+static func reveal_time(slappers: int, reason := "slap") -> float:
+	var read := NERVOUS_READ if reason == "nervous" else REVEAL_READ
+	return settle_time(reason) + slappers * HAND_LIFT_INTERVAL + read
+
+
+# Attente avant le verdict : la fin du tremblement des tapes (courte pour un NERVOUS).
+static func settle_time(reason: String) -> float:
+	return NERVOUS_SETTLE if reason == "nervous" else SETTLE_TIME
 
 
 # Entre deux manches : un niveau de plus par minute de jeu écoulée. Chaque niveau réduit

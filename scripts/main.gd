@@ -54,11 +54,10 @@ const WARNING_RED := Color(1.0, 0.1, 0.1)
 const WARNING_TREMBLE := 0.005    # tremblement (mètres) d'une main qui touche le cercle
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const TEARS_DURATION := 2.5      # durée des pleurs d'un perdant (les larmes se succèdent plus vite s'il y en a beaucoup)
-const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "defeat": 1, "victory": 1, "buzz": 1, "nervous_cry": 1, "ambient": 1}
+const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "defeat": 1, "victory": 1, "buzz": 1, "nervous_cry": 1}
 const HEARTBEAT_BPM := Vector2(70.0, 140.0)    # battement de cœur : rythme au début du penché, puis au maximum
 const HEARTBEAT_VOLUME := Vector2(-28.0, -4.0)  # et volume (dB)
 const BUZZ_VOLUME := Vector2(-30.0, -14.0)     # grésillement : volume (dB) quand la main effleure le cercle, puis à la limite
-const MUSIC_VOLUME := -17.0                    # musique d'ambiance (dB), discrète
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
 # Nombre d'ordinateurs de la prochaine partie (choisi dans le menu).
@@ -104,7 +103,6 @@ var sounds := {}   # nom du groupe -> liste de variantes
 var _beat_timer := 0.0
 var _tear_mat: StandardMaterial3D
 var _buzz_players: Array[AudioStreamPlayer3D] = []
-var _music: AudioStreamPlayer
 var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
@@ -789,13 +787,14 @@ func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
 func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int) -> void:
 	_turn_player = -1
 	var calm := create_tween()
-	calm.tween_property(self, "_trauma", 0.0, GameServer.SETTLE_TIME).set_ease(Tween.EASE_OUT)
+	var settle := GameServer.settle_time(reason)
+	calm.tween_property(self, "_trauma", 0.0, settle).set_ease(Tween.EASE_OUT)
 	var sequence := _slap_sequence.duplicate()
 	_slap_sequence.clear()
 	var reveal := create_tween()
-	reveal.tween_interval(GameServer.SETTLE_TIME)
+	reveal.tween_interval(settle)
 	reveal.tween_callback(func():
-		_show_message(_pile_message(shares, reason), GameServer.reveal_time(sequence.size()) - GameServer.SETTLE_TIME + 0.6)
+		_show_message(_pile_message(shares, reason), GameServer.reveal_time(sequence.size(), reason) - settle + 0.6)
 		var n := center_cards.size()
 		for i in range(maxi(0, n - highlighted), n):
 			_highlight(center_cards[i])
@@ -805,9 +804,9 @@ func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int) -> vo
 			var hand := right_hands[p]
 			var ht := _hand_tween(p)
 			ht.tween_interval(k * GameServer.HAND_LIFT_INTERVAL)
-			ht.tween_property(hand, "global_position", hand.global_position + Vector3(0, 0.1, 0), 0.3) \
+			ht.tween_property(hand, "global_position", hand.global_position + Vector3(0, 0.1, 0), 0.2) \
 				.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
-			ht.tween_property(hand, "global_position", _rest_pos(p), 0.6).set_trans(Tween.TRANS_SINE)
+			ht.tween_property(hand, "global_position", _rest_pos(p), 0.35).set_trans(Tween.TRANS_SINE)
 			ht.tween_callback(func(): hand_locked[p] = false)
 			k += 1)
 
@@ -864,12 +863,12 @@ func _on_player_nervous(player: int, order: int) -> void:
 	blink.tween_property(light, "light_energy", 0.0, 0.1)
 	_trauma = minf(TRAUMA_MAX, _trauma + 1.0)
 	if order == 1:
-		_show_banner(hud_nervous)
+		_show_banner(hud_nervous, 0.6)
 		_shout_nervous()
 
 
 # Grosse annonce au centre de l'écran : surgit, tremble, puis s'efface.
-func _show_banner(banner: Label) -> void:
+func _show_banner(banner: Label, hold := 1.3) -> void:
 	banner.visible = true
 	banner.modulate.a = 1.0
 	banner.pivot_offset = banner.size / 2.0
@@ -881,7 +880,7 @@ func _show_banner(banner: Label) -> void:
 	tw.tween_method(func(t: float):
 		banner.rotation = sin(t * 40.0) * 0.06 * (1.0 - t)
 		banner.scale = Vector2.ONE * (1.0 + 0.08 * sin(t * 25.0)),
-		0.0, 1.0, 1.3)
+		0.0, 1.0, hold)
 	tw.tween_property(banner, "modulate:a", 0.0, 0.3)
 	tw.tween_callback(func():
 		banner.visible = false
@@ -1170,7 +1169,6 @@ func _load_sounds() -> void:
 			right_hands[p].add_child(buzz)
 			buzz.play()
 			_buzz_players.append(buzz)
-	_start_music()
 
 
 # Joue une variante au hasard, placée dans la scène, avec un peu de variation de hauteur et de volume.
@@ -1193,7 +1191,7 @@ func _play_sound(group: String, pos: Vector3, volume_db := 0.0) -> void:
 
 
 # Son non spatialisé (annonces).
-func _play_ui_sound(group: String, volume_db := 0.0) -> void:
+func _play_ui_sound(group: String, volume_db := 0.0, pitch := 1.0) -> void:
 	var variants: Array = sounds.get(group, [])
 	if _game_over:
 		return
@@ -1202,6 +1200,7 @@ func _play_ui_sound(group: String, volume_db := 0.0) -> void:
 	var player := AudioStreamPlayer.new()
 	player.stream = variants.pick_random()
 	player.volume_db = volume_db
+	player.pitch_scale = pitch
 	add_child(player)
 	player.finished.connect(player.queue_free)
 	player.add_to_group("sfx")
@@ -1225,8 +1224,6 @@ func _update_heartbeat(delta: float) -> void:
 
 # Fin de partie : on coupe tous les effets visuels et sonores en cours.
 func _stop_effects() -> void:
-	if _music != null:
-		_music.stop()
 	DisplayServer.tts_stop()
 	for buzz in _buzz_players:
 		buzz.stop()
@@ -1260,25 +1257,13 @@ func _shout_nervous() -> void:
 	if voices.is_empty():
 		voices = DisplayServer.tts_get_voices()
 	if voices.is_empty():
-		_play_ui_sound("nervous_cry", -2.0)
+		_play_ui_sound("nervous_cry", -2.0, 1.3)  # accéléré : cri plus court
 		return
 	DisplayServer.tts_stop()
-	DisplayServer.tts_speak("Nervous!", voices[0], 100, 1.6, 0.45)
+	DisplayServer.tts_speak("Nervous!", voices[0], 100, 1.6, 0.8)
 
 
 # Nouvelle manche plus rapide : grosse annonce au centre de l'écran.
 func _on_speed_changed(level: int) -> void:
 	hud_speed.text = "La partie s'accélère !\nNiveau %d" % (level + 1)
 	_show_banner(hud_speed)
-
-
-# Musique d'ambiance en boucle, qui monte doucement au début de la partie.
-func _start_music() -> void:
-	if sounds["ambient"].is_empty():
-		return
-	_music = AudioStreamPlayer.new()
-	_music.stream = sounds["ambient"][0]
-	_music.volume_db = -60.0
-	add_child(_music)
-	_music.play()
-	create_tween().tween_property(_music, "volume_db", MUSIC_VOLUME, 3.0)
