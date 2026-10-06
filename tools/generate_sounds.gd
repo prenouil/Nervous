@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_save("victory", _victory())
 	_save("buzz", _buzz())
 	_save("nervous_cry", _nervous_cry())
+	_save("ambient", _ambient())
 	print("Sons générés dans res://sounds/")
 	quit()
 
@@ -257,6 +258,62 @@ func _nervous_cry() -> PackedFloat32Array:
 		var s := (noise - (hiss.call(noise) as float)) * (1.0 if t > 1.4 and t < 1.65 else 0.0) * 0.6
 		out[i] = (voiced * 2.2 + bright) * env + s
 	return out
+
+
+# Musique d'ambiance en boucle (2 minutes) : nappes douces sur quatre accords, basse feutrée
+# et quelques notes de clochette. La queue d'écho de la fin est reportée au début : la
+# boucle se raccorde sans coupure.
+func _ambient() -> PackedFloat32Array:
+	var bar := 3.75                  # 4 mesures = 15 s ; 8 tours = 120 s
+	var length := 120.0
+	var out := _buffer(length + 4.0)  # + queue (notes et écho qui débordent)
+	var chords := [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 59], [55, 59, 62, 64]]  # Lam7, Fa7M, Do7M, Sol6
+	var roots := [45, 41, 36, 43]
+	var scale := [69, 72, 74, 76, 79, 81]  # la mineur pentatonique
+	for b in int(length / bar):
+		var start := b * bar
+		for note in chords[b % 4]:
+			_add_pad(out, start, bar, _midi(note), 0.07)
+		for half in 2:
+			_add_bass(out, start + half * bar / 2.0, _midi(roots[b % 4]), 0.22)
+		for step in 4:
+			if rng.randf() < 0.35:
+				_add_bell(out, start + step * bar / 4.0, _midi(scale[rng.randi() % scale.size()]), 0.1)
+	_echo(out, 0.47, 0.3)
+	var loop_samples := int(length * RATE)
+	for i in range(loop_samples, out.size()):
+		out[i - loop_samples] += out[i]
+	return out.slice(0, loop_samples)
+
+
+func _midi(note: int) -> float:
+	return 440.0 * pow(2.0, (note - 69) / 12.0)
+
+
+# Nappe : deux sinus légèrement désaccordés et une octave douce, attaque et extinction lentes.
+func _add_pad(out: PackedFloat32Array, start: float, duration: float, freq: float, gain: float) -> void:
+	var attack := 1.2
+	var release := 1.6
+	for i in range(int(start * RATE), mini(out.size(), int((start + duration + release) * RATE))):
+		var t := float(i) / RATE - start
+		var env := minf(t / attack, 1.0) * (1.0 if t < duration else maxf(0.0, 1.0 - (t - duration) / release))
+		var wave := sin(TAU * freq * t) + sin(TAU * freq * 1.003 * t) + 0.25 * sin(TAU * freq * 2.0 * t)
+		out[i] += wave * env * gain * (0.85 + 0.15 * sin(TAU * 0.2 * t))
+
+
+# Basse feutrée : sinus grave qui s'éteint doucement.
+func _add_bass(out: PackedFloat32Array, start: float, freq: float, gain: float) -> void:
+	for i in range(int(start * RATE), mini(out.size(), int((start + 1.8) * RATE))):
+		var t := float(i) / RATE - start
+		out[i] += (sin(TAU * freq * t) + 0.2 * sin(TAU * freq * 2.0 * t)) * minf(t / 0.03, 1.0) * exp(-t / 0.7) * gain
+
+
+# Clochette : sinus avec une harmonique légèrement inharmonique, longue extinction.
+func _add_bell(out: PackedFloat32Array, start: float, freq: float, gain: float) -> void:
+	for i in range(int(start * RATE), mini(out.size(), int((start + 2.5) * RATE))):
+		var t := float(i) / RATE - start
+		var wave := sin(TAU * freq * t) + 0.3 * sin(TAU * freq * 2.01 * t) * exp(-t / 0.3)
+		out[i] += wave * minf(t / 0.005, 1.0) * exp(-t / 0.8) * gain
 
 
 # --- Outils ------------------------------------------------------------------------

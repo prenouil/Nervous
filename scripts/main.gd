@@ -54,10 +54,11 @@ const WARNING_RED := Color(1.0, 0.1, 0.1)
 const WARNING_TREMBLE := 0.005    # tremblement (mètres) d'une main qui touche le cercle
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const TEARS_DURATION := 2.5      # durée des pleurs d'un perdant (les larmes se succèdent plus vite s'il y en a beaucoup)
-const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "defeat": 1, "victory": 1, "buzz": 1, "nervous_cry": 1}
+const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "defeat": 1, "victory": 1, "buzz": 1, "nervous_cry": 1, "ambient": 1}
 const HEARTBEAT_BPM := Vector2(70.0, 140.0)    # battement de cœur : rythme au début du penché, puis au maximum
 const HEARTBEAT_VOLUME := Vector2(-28.0, -4.0)  # et volume (dB)
 const BUZZ_VOLUME := Vector2(-30.0, -14.0)     # grésillement : volume (dB) quand la main effleure le cercle, puis à la limite
+const MUSIC_VOLUME := -17.0                    # musique d'ambiance (dB), discrète
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
 # Nombre d'ordinateurs de la prochaine partie (choisi dans le menu).
@@ -103,6 +104,7 @@ var sounds := {}   # nom du groupe -> liste de variantes
 var _beat_timer := 0.0
 var _tear_mat: StandardMaterial3D
 var _buzz_players: Array[AudioStreamPlayer3D] = []
+var _music: AudioStreamPlayer
 var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
@@ -1168,6 +1170,7 @@ func _load_sounds() -> void:
 			right_hands[p].add_child(buzz)
 			buzz.play()
 			_buzz_players.append(buzz)
+	_start_music()
 
 
 # Joue une variante au hasard, placée dans la scène, avec un peu de variation de hauteur et de volume.
@@ -1222,6 +1225,8 @@ func _update_heartbeat(delta: float) -> void:
 
 # Fin de partie : on coupe tous les effets visuels et sonores en cours.
 func _stop_effects() -> void:
+	if _music != null:
+		_music.stop()
 	DisplayServer.tts_stop()
 	for buzz in _buzz_players:
 		buzz.stop()
@@ -1265,3 +1270,15 @@ func _shout_nervous() -> void:
 func _on_speed_changed(level: int) -> void:
 	hud_speed.text = "La partie s'accélère !\nNiveau %d" % (level + 1)
 	_show_banner(hud_speed)
+
+
+# Musique d'ambiance en boucle, qui monte doucement au début de la partie.
+func _start_music() -> void:
+	if sounds["ambient"].is_empty():
+		return
+	_music = AudioStreamPlayer.new()
+	_music.stream = sounds["ambient"][0]
+	_music.volume_db = -60.0
+	add_child(_music)
+	_music.play()
+	create_tween().tween_property(_music, "volume_db", MUSIC_VOLUME, 3.0)
