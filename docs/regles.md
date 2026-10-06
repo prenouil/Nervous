@@ -135,7 +135,7 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 | Le tas grossit | battement de cœur, de plus en plus fort et rapide (70 à 140 par minute) à mesure que tu te penches |
 | Main qui touche le cercle | grésillement électrique discret, plus fort quand elle s'enfonce |
 | NERVOUS ! | une voix de synthèse crie « Nervous ! » (cri synthétisé de secours si aucune voix) |
-| En permanence (dès le menu, sans jamais s'arrêter) | musique d'ambiance douce en boucle (2 min) : nappes sur Lam7, Fa7M, Do7M, Sol6, basse feutrée, clochettes |
+| En permanence (dès le menu, sans jamais s'arrêter) | musique enjouée et rythmée en boucle (2 min, composition originale) : 128 BPM, batterie, basse « oom-pah », accords piqués à contretemps, mélodie au xylophone (et au sifflet) |
 | Fin de partie | tous les effets s'arrêtent ; **défaite** : courte mélodie triste ; **victoire** : fanfare, applaudissements et cris de joie |
 
 ## Menu

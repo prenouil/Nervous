@@ -22,7 +22,7 @@ func _initialize() -> void:
 	_save("victory", _victory())
 	_save("buzz", _buzz())
 	_save("nervous_cry", _nervous_cry())
-	_save("ambient", _ambient())
+	_save("music", _game_music())
 	print("Sons générés dans res://sounds/")
 	quit()
 
@@ -260,60 +260,144 @@ func _nervous_cry() -> PackedFloat32Array:
 	return out
 
 
-# Musique d'ambiance en boucle (2 minutes) : nappes douces sur quatre accords, basse feutrée
-# et quelques notes de clochette. La queue d'écho de la fin est reportée au début : la
-# boucle se raccorde sans coupure.
-func _ambient() -> PackedFloat32Array:
-	var bar := 3.75                  # 4 mesures = 15 s ; 8 tours = 120 s
-	var length := 120.0
-	var out := _buffer(length + 4.0)  # + queue (notes et écho qui débordent)
-	var chords := [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 59], [55, 59, 62, 64]]  # Lam7, Fa7M, Do7M, Sol6
-	var roots := [45, 41, 36, 43]
-	var scale := [69, 72, 74, 76, 79, 81]  # la mineur pentatonique
-	for b in int(length / bar):
-		var start := b * bar
-		for note in chords[b % 4]:
-			_add_pad(out, start, bar, _midi(note), 0.07)
-		for half in 2:
-			_add_bass(out, start + half * bar / 2.0, _midi(roots[b % 4]), 0.22)
-		for step in 4:
-			if rng.randf() < 0.35:
-				_add_bell(out, start + step * bar / 4.0, _midi(scale[rng.randi() % scale.size()]), 0.1)
-	_echo(out, 0.47, 0.3)
+# Musique du jeu en boucle (2 minutes, composition originale) : enjouée et sautillante,
+# batterie, basse « oom-pah », accords piqués à contretemps, mélodie au xylophone
+# (et au sifflet dans une section). 128 battements par minute : 64 mesures = 120 s.
+const MUSIC_BPM := 128.0
+const CHORD_NOTES := {"C": [60, 64, 67], "Am": [57, 60, 64], "F": [57, 60, 65], "G": [55, 59, 62], "Em": [55, 59, 64]}
+const CHORD_ROOTS := {"C": 36, "Am": 45, "F": 41, "G": 43, "Em": 40}
+const THEME_CHORDS := ["C", "Am", "F", "G", "C", "Am", "F", "G"]
+const BRIDGE_CHORDS := ["F", "G", "Em", "Am", "F", "G", "C", "C"]
+# Mélodies : par mesure, une liste de [temps, note MIDI, durée en temps].
+const THEME_MOTIF := [
+	[[0, 72, .5], [.5, 76, .5], [1, 79, .5], [1.5, 84, .5], [2, 83, .5], [2.5, 79, .5], [3, 76, 1]],
+	[[0, 81, .5], [.5, 79, .5], [1, 76, .5], [1.5, 72, .5], [2, 76, 1], [3.5, 74, .5]],
+	[[0, 77, .5], [.5, 81, .5], [1, 84, .5], [1.5, 81, .5], [2, 79, .5], [2.5, 77, .5], [3, 76, .5], [3.5, 74, .5]],
+	[[0, 74, .5], [.5, 79, .5], [1, 83, .75], [2, 81, .5], [2.5, 79, .5], [3, 74, 1]]]
+const BRIDGE_MELODY := [
+	[[0, 84, .25], [.5, 84, .25], [1, 81, .5], [2, 84, .5], [3, 86, 1]],
+	[[0, 86, .25], [.5, 86, .25], [1, 83, .5], [2, 86, .5], [3, 88, 1]],
+	[[0, 88, .5], [1, 86, .5], [1.5, 84, .5], [2, 83, 1], [3, 79, 1]],
+	[[0, 81, .5], [.5, 84, .5], [1, 88, 1], [2, 86, .5], [2.5, 84, .5], [3, 81, 1]],
+	[[0, 81, .5], [.5, 77, .5], [1, 72, .5], [1.5, 77, .5], [2, 81, .5], [2.5, 84, .5], [3, 81, 1]],
+	[[0, 83, .5], [.5, 79, .5], [1, 74, .5], [1.5, 79, .5], [2, 83, .5], [2.5, 86, .5], [3, 83, 1]],
+	[[0, 84, 1.5], [2, 79, .5], [2.5, 76, .5], [3, 72, 1]],
+	[]]
+
+
+func _game_music() -> PackedFloat32Array:
+	var beat := 60.0 / MUSIC_BPM
+	var length := 64 * 4 * beat
+	var out := _buffer(length + 2.0)
+	var sections := ["theme", "theme", "bridge", "theme", "whistle", "bridge", "theme", "theme"]
+	for s in sections.size():
+		var kind: String = sections[s]
+		var chords: Array = BRIDGE_CHORDS if kind == "bridge" else THEME_CHORDS
+		for b in 8:
+			var t0 := (s * 8 + b) * 4.0 * beat
+			var chord: String = chords[b]
+			_music_drums(out, t0, beat, b == 7)
+			var root := _midi(CHORD_ROOTS[chord])
+			for step in 4:  # oom-pah : fondamentale, quinte, fondamentale, quinte une octave au-dessus
+				var freq := root if step % 2 == 0 else root * 1.5 * (2.0 if step == 3 else 1.0)
+				_add_pluck_bass(out, t0 + step * beat, freq, beat * 0.8, 0.5)
+			for step in 4:  # accords piqués à contretemps
+				_add_skank(out, t0 + (step + 0.5) * beat, CHORD_NOTES[chord], 0.14)
+			var bar_notes: Array = BRIDGE_MELODY[b] if kind == "bridge" else THEME_MOTIF[b % 4]
+			for note in bar_notes:
+				var at: float = t0 + note[0] * beat
+				var duration: float = note[2] * beat
+				if kind == "whistle":
+					_add_whistle(out, at, _midi(note[1]), duration, 0.3)
+				else:
+					_add_xylo(out, at, _midi(note[1]), 0.38)
 	var loop_samples := int(length * RATE)
 	for i in range(loop_samples, out.size()):
-		out[i - loop_samples] += out[i]
+		out[i - loop_samples] += out[i]  # la fin déborde sur le début : boucle sans coupure
 	return out.slice(0, loop_samples)
+
+
+# Batterie d'une mesure : grosse caisse, caisse claire sur 2 et 4, charleston en croches,
+# roulement de caisse claire à la fin d'une section.
+func _music_drums(out: PackedFloat32Array, t0: float, beat: float, fill: bool) -> void:
+	for k in [0.0, 2.0, 2.5]:
+		_add_kick(out, t0 + k * beat, 0.9 if k != 2.5 else 0.6)
+	for k in ([1.0, 3.0, 3.25, 3.5, 3.75] if fill else [1.0, 3.0]):
+		_add_snare(out, t0 + k * beat, 0.5 if k == floorf(k) else 0.35)
+	for k in 8:
+		_add_hat(out, t0 + k * 0.5 * beat, 0.16 if k % 2 == 1 else 0.08)
 
 
 func _midi(note: int) -> float:
 	return 440.0 * pow(2.0, (note - 69) / 12.0)
 
 
-# Nappe : deux sinus légèrement désaccordés et une octave douce, attaque et extinction lentes.
-func _add_pad(out: PackedFloat32Array, start: float, duration: float, freq: float, gain: float) -> void:
-	var attack := 1.2
-	var release := 1.6
-	for i in range(int(start * RATE), mini(out.size(), int((start + duration + release) * RATE))):
+func _add_kick(out: PackedFloat32Array, start: float, gain: float) -> void:
+	var phase := 0.0
+	for i in range(int(start * RATE), mini(out.size(), int((start + 0.18) * RATE))):
 		var t := float(i) / RATE - start
-		var env := minf(t / attack, 1.0) * (1.0 if t < duration else maxf(0.0, 1.0 - (t - duration) / release))
-		var wave := sin(TAU * freq * t) + sin(TAU * freq * 1.003 * t) + 0.25 * sin(TAU * freq * 2.0 * t)
-		out[i] += wave * env * gain * (0.85 + 0.15 * sin(TAU * 0.2 * t))
+		phase += TAU * (50.0 + 110.0 * exp(-t / 0.03)) / RATE
+		out[i] += sin(phase) * exp(-t / 0.07) * gain
 
 
-# Basse feutrée : sinus grave qui s'éteint doucement.
-func _add_bass(out: PackedFloat32Array, start: float, freq: float, gain: float) -> void:
-	for i in range(int(start * RATE), mini(out.size(), int((start + 1.8) * RATE))):
+func _add_snare(out: PackedFloat32Array, start: float, gain: float) -> void:
+	var low := _lowpass(900.0)
+	for i in range(int(start * RATE), mini(out.size(), int((start + 0.15) * RATE))):
 		var t := float(i) / RATE - start
-		out[i] += (sin(TAU * freq * t) + 0.2 * sin(TAU * freq * 2.0 * t)) * minf(t / 0.03, 1.0) * exp(-t / 0.7) * gain
+		var noise := rng.randf_range(-1.0, 1.0)
+		var body := sin(TAU * 190.0 * t) * exp(-t / 0.03)
+		out[i] += ((noise - (low.call(noise) as float)) * exp(-t / 0.05) + body * 0.5) * gain
 
 
-# Clochette : sinus avec une harmonique légèrement inharmonique, longue extinction.
-func _add_bell(out: PackedFloat32Array, start: float, freq: float, gain: float) -> void:
-	for i in range(int(start * RATE), mini(out.size(), int((start + 2.5) * RATE))):
+func _add_hat(out: PackedFloat32Array, start: float, gain: float) -> void:
+	var low := _lowpass(6000.0)
+	for i in range(int(start * RATE), mini(out.size(), int((start + 0.04) * RATE))):
 		var t := float(i) / RATE - start
-		var wave := sin(TAU * freq * t) + 0.3 * sin(TAU * freq * 2.01 * t) * exp(-t / 0.3)
-		out[i] += wave * minf(t / 0.005, 1.0) * exp(-t / 0.8) * gain
+		var noise := rng.randf_range(-1.0, 1.0)
+		out[i] += (noise - (low.call(noise) as float)) * exp(-t / 0.012) * gain
+
+
+# Basse pincée : son rond et court qui rebondit.
+func _add_pluck_bass(out: PackedFloat32Array, start: float, freq: float, duration: float, gain: float) -> void:
+	var tone := _lowpass(500.0)
+	var phase := 0.0
+	for i in range(int(start * RATE), mini(out.size(), int((start + duration) * RATE))):
+		var t := float(i) / RATE - start
+		phase += freq / RATE
+		var saw := 2.0 * fposmod(phase, 1.0) - 1.0
+		var env := minf(t / 0.005, 1.0) * exp(-t / 0.18) * minf((duration - t) / 0.02, 1.0)
+		out[i] += ((tone.call(saw) as float) * 1.5 + sin(TAU * freq * t) * 0.6) * env * gain
+
+
+# Accord piqué (contretemps) : court et brillant, façon ukulélé.
+func _add_skank(out: PackedFloat32Array, start: float, notes: Array, gain: float) -> void:
+	for note in notes:
+		var freq := _midi(note)
+		var tone := _lowpass(2500.0)
+		var phase := 0.0
+		for i in range(int(start * RATE), mini(out.size(), int((start + 0.14) * RATE))):
+			var t := float(i) / RATE - start
+			phase += freq / RATE
+			var saw := 2.0 * fposmod(phase, 1.0) - 1.0
+			out[i] += (tone.call(saw) as float) * minf(t / 0.003, 1.0) * exp(-t / 0.045) * gain
+
+
+# Xylophone : attaque nette, partiel aigu qui s'éteint vite.
+func _add_xylo(out: PackedFloat32Array, start: float, freq: float, gain: float) -> void:
+	for i in range(int(start * RATE), mini(out.size(), int((start + 0.6) * RATE))):
+		var t := float(i) / RATE - start
+		var wave := sin(TAU * freq * t) + 0.5 * sin(TAU * freq * 3.98 * t) * exp(-t / 0.04)
+		out[i] += wave * minf(t / 0.002, 1.0) * exp(-t / 0.16) * gain
+
+
+# Sifflet : sinus pur une octave au-dessus, avec vibrato et un peu de souffle.
+func _add_whistle(out: PackedFloat32Array, start: float, freq: float, duration: float, gain: float) -> void:
+	var air := _lowpass(3000.0)
+	for i in range(int(start * RATE), mini(out.size(), int((start + duration + 0.05) * RATE))):
+		var t := float(i) / RATE - start
+		var env := minf(t / 0.02, 1.0) * minf(maxf(duration + 0.05 - t, 0.0) / 0.05, 1.0)
+		var wave := sin(TAU * freq * 2.0 * t * (1.0 + 0.004 * sin(TAU * 6.0 * t)))
+		out[i] += (wave + (air.call(rng.randf_range(-1.0, 1.0)) as float) * 0.08) * env * gain
 
 
 # --- Outils ------------------------------------------------------------------------

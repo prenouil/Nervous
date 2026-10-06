@@ -2,7 +2,7 @@
 # le menu, boucle en continu et ne s'arrête jamais, même en changeant de scène.
 extends AudioStreamPlayer
 
-const MUSIC_PATH := "res://sounds/ambient.wav"
+const MUSIC_PATH := "res://sounds/music.wav"
 const MUSIC_VOLUME := -17.0  # discrète
 
 
