@@ -54,9 +54,10 @@ const WARNING_RED := Color(1.0, 0.1, 0.1)
 const WARNING_TREMBLE := 0.005    # tremblement (mètres) d'une main qui touche le cercle
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const TEARS_DURATION := 2.5      # durée des pleurs d'un perdant (les larmes se succèdent plus vite s'il y en a beaucoup)
-const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "defeat": 1, "victory": 1}
+const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "defeat": 1, "victory": 1, "buzz": 1, "nervous_cry": 1}
 const HEARTBEAT_BPM := Vector2(70.0, 140.0)    # battement de cœur : rythme au début du penché, puis au maximum
 const HEARTBEAT_VOLUME := Vector2(-28.0, -4.0)  # et volume (dB)
+const BUZZ_VOLUME := Vector2(-30.0, -14.0)     # grésillement : volume (dB) quand la main effleure le cercle, puis à la limite
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
 # Nombre d'ordinateurs de la prochaine partie (choisi dans le menu).
@@ -90,6 +91,7 @@ var _head_targets: Array[Vector3] = []
 var _head_retarget: Array[float] = []
 var _bot_hand_goal: Array[Vector3] = []  # position annoncée par le serveur pour la main droite des autres joueurs
 var hud_nervous: Label
+var hud_speed: Label
 
 var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
@@ -100,6 +102,7 @@ var _tremor := 0.0   # tremblement des mains, à partir de la 10e carte
 var sounds := {}   # nom du groupe -> liste de variantes
 var _beat_timer := 0.0
 var _tear_mat: StandardMaterial3D
+var _buzz_players: Array[AudioStreamPlayer3D] = []
 var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
@@ -166,6 +169,7 @@ func _ready() -> void:
 	server.game_over.connect(_on_game_over)
 	server.hand_moved.connect(_on_hand_moved)
 	server.player_nervous.connect(_on_player_nervous)
+	server.speed_changed.connect(_on_speed_changed)
 	for i in range(1, seat_count):
 		var bot := BotPlayer.new()
 		bot.name = "Bot%d" % i
@@ -409,6 +413,12 @@ func _build_hud() -> void:
 	hud_nervous.add_theme_constant_override("outline_size", 24)
 	hud_nervous.text = "NERVOUS !!!"
 	hud_nervous.visible = false
+	hud_speed = _hud_label(layer, 96, Control.PRESET_FULL_RECT, HORIZONTAL_ALIGNMENT_CENTER)
+	hud_speed.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hud_speed.add_theme_color_override("font_color", Color(1.0, 0.7, 0.1))
+	hud_speed.add_theme_constant_override("outline_size", 20)
+	hud_speed.text = "La partie s'accélère !"
+	hud_speed.visible = false
 	var help := _hud_label(layer, 18, Control.PRESET_BOTTOM_WIDE, HORIZONTAL_ALIGNMENT_CENTER)
 	help.offset_top = -40
 	help.text = "Clic gauche sur ton tas puis glisse vers le centre : jouer    |    Clic droit : taper (sur la carte du dessus… ou à côté pour feinter)    |    Échap : libérer la souris (clic pour reprendre)"
@@ -525,6 +535,8 @@ func _update_hand_warnings() -> void:
 		var pulse := (0.5 + 0.5 * sin(t * 18.0)) * level
 		for mesh: MeshInstance3D in visual.get_children():
 			(mesh.material_override as StandardMaterial3D).albedo_color = (SKIN_COLORS[p] as Color).lerp(WARNING_RED, pulse)
+		if p < _buzz_players.size():  # grésillement électrique discret quand la main touche le cercle
+			_buzz_players[p].volume_db = -80.0 if level <= 0.0 or _game_over else lerpf(BUZZ_VOLUME.x, BUZZ_VOLUME.y, level)
 
 
 # Un même mouvement de souris déplace la main de la même distance sur la table,
@@ -725,7 +737,7 @@ func _on_card_played(player: int, card: int, center_count: int, landing: Vector2
 	flight.tween_method(func(t: float):
 		node.global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.09
 		node.global_basis = Basis(Vector3.UP, lerp_angle(seat_yaw, end_yaw, t)) * Basis(Vector3.RIGHT, -PI * (1.0 - t)),
-		0.0, 1.0, GameServer.CARD_TRAVEL)
+		0.0, 1.0, server.card_travel)
 	flight.tween_callback(func(): _play_sound("flop", end, -3.0))
 
 	if player != HUMAN:
@@ -769,25 +781,33 @@ func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
 	_animate_slap(player, pos, order, true)
 
 
-# Verdict : on l'annonce, les mains se retirent une par une (la dernière posée d'abord),
-# et les cartes en cause clignotent en rouge, avant que le tas ne soit distribué.
+# Verdict : on laisse d'abord le tremblement s'éteindre (on voit bien qui a tapé, où et
+# dans quel ordre). Ensuite seulement : le message, les cartes en cause qui clignotent en
+# rouge, et les mains qui se retirent lentement une par une (la dernière posée d'abord).
 func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int) -> void:
 	_turn_player = -1
-	_show_message(_pile_message(shares, reason), GameServer.REVEAL_TIME + 0.6)
-	var k := 0
-	for i in range(_slap_sequence.size() - 1, -1, -1):
-		var p := _slap_sequence[i]
-		var hand := right_hands[p]
-		var ht := _hand_tween(p)
-		ht.tween_interval(0.2 + k * 0.25)
-		ht.tween_property(hand, "global_position", hand.global_position + Vector3(0, 0.08, 0), 0.1)
-		ht.tween_property(hand, "global_position", _rest_pos(p), 0.2)
-		ht.tween_callback(func(): hand_locked[p] = false)
-		k += 1
+	var calm := create_tween()
+	calm.tween_property(self, "_trauma", 0.0, GameServer.SETTLE_TIME).set_ease(Tween.EASE_OUT)
+	var sequence := _slap_sequence.duplicate()
 	_slap_sequence.clear()
-	var n := center_cards.size()
-	for i in range(maxi(0, n - highlighted), n):
-		_highlight(center_cards[i])
+	var reveal := create_tween()
+	reveal.tween_interval(GameServer.SETTLE_TIME)
+	reveal.tween_callback(func():
+		_show_message(_pile_message(shares, reason), GameServer.reveal_time(sequence.size()) - GameServer.SETTLE_TIME + 0.6)
+		var n := center_cards.size()
+		for i in range(maxi(0, n - highlighted), n):
+			_highlight(center_cards[i])
+		var k := 0
+		for i in range(sequence.size() - 1, -1, -1):
+			var p: int = sequence[i]
+			var hand := right_hands[p]
+			var ht := _hand_tween(p)
+			ht.tween_interval(k * GameServer.HAND_LIFT_INTERVAL)
+			ht.tween_property(hand, "global_position", hand.global_position + Vector3(0, 0.1, 0), 0.3) \
+				.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+			ht.tween_property(hand, "global_position", _rest_pos(p), 0.6).set_trans(Tween.TRANS_SINE)
+			ht.tween_callback(func(): hand_locked[p] = false)
+			k += 1)
 
 
 # Cadre rouge qui pulse autour de la carte, et carte teintée de rouge.
@@ -842,26 +862,28 @@ func _on_player_nervous(player: int, order: int) -> void:
 	blink.tween_property(light, "light_energy", 0.0, 0.1)
 	_trauma = minf(TRAUMA_MAX, _trauma + 1.0)
 	if order == 1:
-		_show_nervous_banner()
+		_show_banner(hud_nervous)
+		_shout_nervous()
 
 
-func _show_nervous_banner() -> void:
-	hud_nervous.visible = true
-	hud_nervous.modulate.a = 1.0
-	hud_nervous.pivot_offset = hud_nervous.size / 2.0
-	hud_nervous.scale = Vector2(0.2, 0.2)
+# Grosse annonce au centre de l'écran : surgit, tremble, puis s'efface.
+func _show_banner(banner: Label) -> void:
+	banner.visible = true
+	banner.modulate.a = 1.0
+	banner.pivot_offset = banner.size / 2.0
+	banner.scale = Vector2(0.2, 0.2)
 	var tw := create_tween()
-	tw.tween_property(hud_nervous, "scale", Vector2(1.25, 1.25), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_property(hud_nervous, "scale", Vector2.ONE, 0.12)
+	tw.tween_property(banner, "scale", Vector2(1.25, 1.25), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(banner, "scale", Vector2.ONE, 0.12)
 	# Tremblement du texte pendant l'annonce.
 	tw.tween_method(func(t: float):
-		hud_nervous.rotation = sin(t * 40.0) * 0.06 * (1.0 - t)
-		hud_nervous.scale = Vector2.ONE * (1.0 + 0.08 * sin(t * 25.0)),
+		banner.rotation = sin(t * 40.0) * 0.06 * (1.0 - t)
+		banner.scale = Vector2.ONE * (1.0 + 0.08 * sin(t * 25.0)),
 		0.0, 1.0, 1.3)
-	tw.tween_property(hud_nervous, "modulate:a", 0.0, 0.3)
+	tw.tween_property(banner, "modulate:a", 0.0, 0.3)
 	tw.tween_callback(func():
-		hud_nervous.visible = false
-		hud_nervous.rotation = 0.0)
+		banner.visible = false
+		banner.rotation = 0.0)
 
 
 # Un perdant pleure : une larme par carte ramassée, alternativement de chaque œil,
@@ -1136,6 +1158,16 @@ func _load_sounds() -> void:
 			if ResourceLoader.exists(path):
 				variants.append(load(path))
 		sounds[group] = variants
+	# Un grésillement par main droite, en boucle, muet tant que la main ne touche pas le cercle.
+	if not sounds["buzz"].is_empty():
+		for p in seat_count:
+			var buzz := AudioStreamPlayer3D.new()
+			buzz.stream = sounds["buzz"][0]
+			buzz.volume_db = -80.0
+			buzz.unit_size = 1.0
+			right_hands[p].add_child(buzz)
+			buzz.play()
+			_buzz_players.append(buzz)
 
 
 # Joue une variante au hasard, placée dans la scène, avec un peu de variation de hauteur et de volume.
@@ -1190,9 +1222,13 @@ func _update_heartbeat(delta: float) -> void:
 
 # Fin de partie : on coupe tous les effets visuels et sonores en cours.
 func _stop_effects() -> void:
+	DisplayServer.tts_stop()
+	for buzz in _buzz_players:
+		buzz.stop()
 	_trauma = 0.0
 	_tremor = 0.0
 	hud_nervous.visible = false
+	hud_speed.visible = false
 	_clear_nervous_hands()
 	for node in get_tree().get_nodes_in_group("fx"):
 		node.queue_free()
@@ -1210,3 +1246,22 @@ func _play_end_music(victory: bool) -> void:
 	player.volume_db = -4.0
 	add_child(player)
 	player.play()
+
+
+# Cri « Nervouuuus !!! » : voix de synthèse du système si possible (anglaise de préférence,
+# lente et aiguë), sinon le cri synthétisé de secours.
+func _shout_nervous() -> void:
+	var voices := DisplayServer.tts_get_voices_for_language("en")
+	if voices.is_empty():
+		voices = DisplayServer.tts_get_voices()
+	if voices.is_empty():
+		_play_ui_sound("nervous_cry", -2.0)
+		return
+	DisplayServer.tts_stop()
+	DisplayServer.tts_speak("Nervous!", voices[0], 100, 1.6, 0.45)
+
+
+# Nouvelle manche plus rapide : grosse annonce au centre de l'écran.
+func _on_speed_changed(level: int) -> void:
+	hud_speed.text = "La partie s'accélère !\nNiveau %d" % (level + 1)
+	_show_banner(hud_speed)

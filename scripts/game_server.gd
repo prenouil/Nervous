@@ -19,13 +19,20 @@ signal pile_taken(shares: Dictionary, reason: String)  # { joueur: cartes }, rea
 signal slap_judged(shares: Dictionary, reason: String, highlighted: int)  # verdict annoncé avant le ramassage ; highlighted : nombre de cartes du dessus en cause
 signal hand_moved(player: int, pos: Vector2)     # position de la main droite d'un joueur, pour l'afficher chez les autres
 signal player_nervous(player: int, order: int)  # main restée trop loin dans le cercle : NERVOUS !
+signal speed_changed(level: int)  # la partie s'accélère (au début d'une nouvelle manche)
 signal game_over(loser: int)
 
-const TURN_TIME := 5.0        # temps pour jouer sa carte
-const CARD_TRAVEL := 0.35     # durée du vol de la carte vers le centre
+const TURN_TIME := 5.0        # temps pour jouer sa carte (au niveau 0)
+const CARD_TRAVEL := 0.35     # durée du vol de la carte vers le centre (au niveau 0)
+const SPEED_STEP := 0.9       # à chaque niveau, ces deux durées sont multipliées par ce facteur
+const LEVEL_DURATION := 60.0  # une minute de jeu = un niveau de plus (appliqué entre deux manches)
 const COVER_GRACE := 0.5      # temps pour taper encore une paire après l'atterrissage de la carte qui la recouvre
 const SLAP_WINDOW := 3.0      # temps pour taper une paire visible, puis temps de jugement après la première tape
-const REVEAL_TIME := 1.8      # après le verdict : les mains se retirent, les cartes en cause clignotent
+# Verdict : on attend la fin du tremblement, puis les mains se retirent une à une
+# (dans l'ordre inverse des tapes), puis on laisse le temps de lire avant de distribuer.
+const SETTLE_TIME := 2.2         # fin du tremblement après les tapes
+const HAND_LIFT_INTERVAL := 0.55 # entre deux mains qui se retirent
+const REVEAL_READ := 1.6         # temps de lecture du verdict
 const RESOLVE_DELAY := 1.9    # pause après un ramassage, le temps de l'animation
 const NERVOUS_GRACE := 0.5   # main qui franchit la ligne du cercle : temps pour taper
 const THROW_EXIT_GRACE := 1.0  # carte lâchée dans le cercle : temps pour en ressortir
@@ -44,6 +51,10 @@ var rules := GameRules.new()
 var rng := RandomNumberGenerator.new()
 var state: State = State.IDLE
 var current_player := -1
+var speed_level := 0
+var turn_time := TURN_TIME
+var card_travel := CARD_TRAVEL
+var _start_clock := 0.0
 
 var _clock := 0.0
 var _turn_left := 0.0
@@ -69,6 +80,7 @@ var _nervous_time := 0.0
 func start_game(players := 4) -> void:
 	rng.randomize()
 	rules.setup(players, rng)
+	_start_clock = _clock
 	game_started.emit(rules.counts())
 	_start_turn(rng.randi_range(0, players - 1))
 
@@ -115,13 +127,13 @@ func request_play(p: int) -> void:
 		_pair_open = true
 		_covered = false
 		_pair_player = p
-		_pair_expire = _clock + CARD_TRAVEL + SLAP_WINDOW
+		_pair_expire = _clock + card_travel + SLAP_WINDOW
 		slap_window_opened.emit()
 	elif _pair_open and not _covered:
 		# Recouverte : on peut encore taper jusqu'à peu après l'atterrissage de cette carte.
 		_covered = true
 		_cover_player = p
-		_cover_expire = _clock + CARD_TRAVEL + COVER_GRACE
+		_cover_expire = _clock + card_travel + COVER_GRACE
 	elif _pair_open:
 		_close_pair()  # recouverte deux fois
 	if rules.is_over() and not _pair_open:
@@ -224,8 +236,9 @@ func _resolve_nervous() -> void:
 	_nervous.clear()
 	_center_layout.clear()
 	var shares := rules.give_center_to(losers, rng)
+	var slappers := 0
 	slap_judged.emit(shares, "nervous", 0)
-	_after(REVEAL_TIME, func():
+	_after(reveal_time(slappers), func():
 		pile_taken.emit(shares, "nervous")
 		_after(RESOLVE_DELAY, func(): _continue_with(losers[0])))
 
@@ -287,8 +300,8 @@ func _start_turn(p: int) -> void:
 	_ensure_players()
 	state = State.TURN
 	current_player = p
-	_turn_left = TURN_TIME
-	turn_started.emit(p, TURN_TIME)
+	_turn_left = turn_time
+	turn_started.emit(p, turn_time)
 
 
 # Tape valide : le dernier à taper ramasse ; ceux qui n'ont pas tapé sont tous « derniers »
@@ -310,12 +323,13 @@ func _resolve_slap() -> void:
 			var p := (_pair_player + i) % rules.num_players
 			if not p in _slap_order:
 				losers.append(p)
+	var slappers := _slap_order.size()
 	_slap_order.clear()
 	_slap_positions.clear()
 	_center_layout.clear()
 	var shares := rules.give_center_to(losers, rng)
 	slap_judged.emit(shares, reason, 2 if _slap_valid else 1)
-	_after(REVEAL_TIME, func():
+	_after(reveal_time(slappers), func():
 		pile_taken.emit(shares, reason)
 		_after(RESOLVE_DELAY, func(): _continue_with(losers[0])))
 
@@ -333,6 +347,7 @@ func _on_turn_timeout() -> void:
 
 
 func _continue_with(p: int) -> void:
+	_update_speed()
 	if rules.is_over():
 		_end_game()
 	elif rules.count(p) == 0:
@@ -356,3 +371,24 @@ func _after(seconds: float, callback: Callable) -> void:
 		timer.queue_free()
 		callback.call())
 	timer.start()
+
+
+# Durée entre le verdict et la distribution du tas.
+static func reveal_time(slappers: int) -> float:
+	return SETTLE_TIME + slappers * HAND_LIFT_INTERVAL + REVEAL_READ
+
+
+# Entre deux manches : un niveau de plus par minute de jeu écoulée. Chaque niveau réduit
+# de 10 % le temps pour jouer et la durée du vol (et du retournement) des cartes.
+func _update_speed() -> void:
+	var level := int((_clock - _start_clock) / LEVEL_DURATION)
+	if level <= speed_level or state == State.OVER:
+		return
+	speed_level = level
+	turn_time = TURN_TIME * speed_factor()
+	card_travel = CARD_TRAVEL * speed_factor()
+	speed_changed.emit(speed_level)
+
+
+func speed_factor() -> float:
+	return pow(SPEED_STEP, speed_level)

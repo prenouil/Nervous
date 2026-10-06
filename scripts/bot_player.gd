@@ -53,6 +53,7 @@ func _on_turn_started(player: int, _duration: float) -> void:
 	var delay := rng.randf_range(PLAY_DELAY.x, PLAY_DELAY.y)
 	if _top_cards_look_alike():
 		delay += rng.randf_range(HESITATION.x, HESITATION.y)
+	delay *= server.speed_factor()  # la partie s'accélère : on joue plus vite aussi
 	var token := _play_token
 	_after(delay, func():
 		if token == _play_token:
@@ -65,7 +66,7 @@ func _on_card_played(player: int, card: int, _center_count: int, _pos: Vector2, 
 	# Les cartes se ressemblent : parfois on tape par erreur (sauf celui qui vient de jouer).
 	if player != seat and _top_cards_look_alike():
 		if rng.randf() < MISTAKE_CHANCE:
-			_schedule_slap(GameServer.CARD_TRAVEL + _reaction_time())
+			_schedule_slap(server.card_travel + _reaction_time())
 		if rng.randf() < TENSION_CHANCE:
 			_creep(rng.randf() < CROSS_CHANCE)
 
@@ -76,7 +77,7 @@ func _creep(cross: bool) -> void:
 	_hand_token += 1
 	var token := _hand_token
 	var depth := rng.randf_range(0.04, 0.06) if cross else rng.randf_range(0.0, Table.LINE_TOLERANCE * 0.8)
-	_after(GameServer.CARD_TRAVEL + rng.randf_range(0.1, 0.4), func():
+	_after(server.card_travel + rng.randf_range(0.1, 0.4), func():
 		if token != _hand_token:
 			return
 		server.update_hand(seat, _toward_center(depth))
@@ -124,7 +125,7 @@ func _reaction_time() -> float:
 
 func _on_slap_window_opened() -> void:
 	_pair_visible = true
-	_schedule_slap(GameServer.CARD_TRAVEL + _reaction_time())
+	_schedule_slap(server.card_travel + _reaction_time())
 
 
 # Quelqu'un tape (ou feinte à côté) alors qu'on ne voit pas de paire : chaque nouvelle tape peut

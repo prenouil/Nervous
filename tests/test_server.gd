@@ -22,7 +22,7 @@ func _run() -> void:
 	_play_from(0)                     # centre : 2 (rang 1)
 	server.request_slap(2, _top())
 	server.request_slap(3, _top())
-	await _wait(GameServer.SLAP_WINDOW + GameServer.REVEAL_TIME + 0.2)
+	await _wait(GameServer.SLAP_WINDOW + GameServer.reveal_time(4) + 0.2)
 	_expect(last_take.get("reason") == "false_slap", "tape par erreur détectée")
 	_expect(last_take.get("shares", {}).keys() == [2, 3], "seuls les tapeurs se partagent : %s" % [last_take])
 
@@ -32,7 +32,7 @@ func _run() -> void:
 	server.request_play(1)            # paire
 	server.request_slap(0, _top())
 	server.request_slap(1, _top())
-	await _wait(GameServer.SLAP_WINDOW + GameServer.REVEAL_TIME + 0.2)
+	await _wait(GameServer.SLAP_WINDOW + GameServer.reveal_time(4) + 0.2)
 	_expect(last_take.get("reason") == "slap", "tape valide")
 	_expect(last_take.get("shares", {}).keys() == [2, 3], "non-tapeurs perdants : %s" % [last_take])
 
@@ -41,7 +41,7 @@ func _run() -> void:
 	_play_from(0)
 	server.request_play(1)            # paire 2-2
 	server.request_play(2)            # recouverte par un 9
-	await _wait(GameServer.CARD_TRAVEL + GameServer.COVER_GRACE * 0.5)
+	await _wait(server.card_travel + GameServer.COVER_GRACE * 0.5)
 	server.request_slap(3, _top())
 	_expect(ejected == [[2, 8]], "carte éjectée vers son propriétaire : %s" % [ejected])
 	_expect(server.rules.piles[2][-1] == 8, "la carte éjectée est sous le tas du joueur 2")
@@ -51,10 +51,10 @@ func _run() -> void:
 	_play_from(0)
 	server.request_play(1)
 	server.request_play(2)
-	await _wait(GameServer.CARD_TRAVEL + GameServer.COVER_GRACE + 0.2)
+	await _wait(server.card_travel + GameServer.COVER_GRACE + 0.2)
 	ejected.clear()
 	server.request_slap(3, _top())
-	await _wait(GameServer.SLAP_WINDOW + GameServer.REVEAL_TIME + 0.2)
+	await _wait(GameServer.SLAP_WINDOW + GameServer.reveal_time(4) + 0.2)
 	_expect(ejected.is_empty() and last_take.get("reason") == "false_slap", "tape trop tardive = erreur : %s" % [last_take])
 
 	# 5. Feinte : taper à côté ne compte pas, la tape suivante sur la carte compte.
@@ -99,7 +99,7 @@ func _run() -> void:
 	await _wait(GameServer.NERVOUS_CONTAGION + 0.2)
 	server.update_hand(2, inside)              # trop tard
 	_expect(nervous == [3, 1], "contagion dans les 0,5 s seulement : %s" % [nervous])
-	await _wait(GameServer.NERVOUS_SHOW + GameServer.REVEAL_TIME)
+	await _wait(GameServer.NERVOUS_SHOW + GameServer.reveal_time(0))
 	_expect(last_take.get("reason") == "nervous" and last_take.get("shares", {}).keys() == [3, 1],
 		"les nerveux se partagent le tas : %s" % [last_take])
 
@@ -146,6 +146,20 @@ func _run() -> void:
 	server.update_hand(2, inside)
 	await _wait(GameServer.NERVOUS_GRACE + 0.2)
 	_expect(nervous == [2], "hors de son tour, tenir une carte ne protège pas")
+
+	# 12. Accélération : une minute de jeu = un niveau, appliqué seulement entre deux manches.
+	_new_server([[1, 3, 5], [14, 3, 6], [8, 9, 7], [10, 11, 12]])
+	var levels := []
+	server.speed_changed.connect(func(l): levels.append(l))
+	server._clock = server._start_clock + GameServer.LEVEL_DURATION + 1.0
+	_play_from(0)
+	_expect(levels.is_empty() and server.turn_time == GameServer.TURN_TIME, "pas d'accélération en pleine manche")
+	server._continue_with(1)          # nouvelle manche
+	_expect(levels == [1] and is_equal_approx(server.turn_time, 4.5) and is_equal_approx(server.card_travel, 0.315),
+		"niveau 1 : -10 %% de temps pour jouer et de vol des cartes (%s, %.3f, %.3f)" % [levels, server.turn_time, server.card_travel])
+	server._clock += GameServer.LEVEL_DURATION
+	server._continue_with(2)
+	_expect(levels == [1, 2] and is_equal_approx(server.turn_time, 4.05), "niveau 2 : encore -10 %%")
 
 	print("OK" if failures == 0 else "%d ÉCHEC(S)" % failures)
 	quit(failures)

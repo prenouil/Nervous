@@ -41,7 +41,7 @@ Deux cartes consécutives forment une paire si :
 - Les ordinateurs visent la carte du dessus (avec une petite imprécision) et ne feintent jamais, mais une feinte peut déclencher leur réflexe de suivre.
 - **Dès qu'un joueur tape, sa main bloque le tas** : plus personne ne joue. Les autres ont **3 secondes** pour taper eux aussi. Ensuite on juge si la première tape était valide.
 - Les mains s'empilent dans l'ordre d'arrivée. **L'ordre est essentiel.**
-- **Verdict** : quand tout le monde a tapé (ou à la fin des 3 secondes), on annonce les perdants. Les mains se retirent **une par une** (la dernière posée d'abord) et les cartes en cause **clignotent en rouge** : les deux cartes de la paire, ou la carte tapée à tort. Ensuite seulement, le tas est distribué.
+- **Verdict** : quand tout le monde a tapé (ou à la fin des 3 secondes), on attend que **le tremblement soit fini** (on voit bien qui a tapé, où et dans quel ordre). Ensuite seulement : le message qui annonce les perdants, les cartes en cause qui **clignotent en rouge** (les deux cartes de la paire, ou la carte tapée à tort), et les mains qui se retirent **lentement, une par une** (la dernière posée d'abord). Puis le tas est distribué.
 - **Larmes** : chaque joueur qui ramasse **pleure à grosses larmes**, une par carte ramassée, et sa tête est secouée de sanglots. Pour le joueur humain, les larmes coulent devant la caméra, dans les coins bas de l'écran.
 - Les cartes ramassées sont toujours **mélangées puis placées sous le tas** de ceux qui ramassent, même s'ils n'avaient plus de cartes. Quand plusieurs joueurs se partagent le tas, les cartes sont distribuées une à une.
 
@@ -68,13 +68,20 @@ Deux cartes consécutives forment une paire si :
 ## Nervous !
 
 - Un **cercle rouge** est tracé au centre de la table (diamètre : 3/8 de la table).
-- Une main droite qui **touche un peu le cercle** (moins de 2 cm) **pulse en rouge et tremble** : simple avertissement.
+- Une main droite qui **touche un peu le cercle** (moins de 2 cm) **pulse en rouge, tremble et grésille** (bruit discret d'électricité) : simple avertissement.
 - Une main qui **franchit la ligne** (plus de 2 cm) doit **taper dans les 0,5 s** (une feinte compte). Si le joueur ne tape pas à temps, **ou ramène sa main avant d'avoir tapé**, il est **nerveux** !
 - **Exception : jeter sa carte.** Pendant son tour, un joueur qui tient sa carte peut franchir la ligne impunément. Une fois la carte lâchée, il doit **ressortir du cercle dans la seconde**, sinon il est nerveux.
-- Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 2 s, et une **lumière rouge clignote** sur la main fautive.
+- Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 2 s, une **voix crie « Nervous ! »**, et une **lumière rouge clignote** sur la main fautive.
 - Pendant les **0,5 s** qui suivent, toute autre main qui franchit la ligne est aussi déclarée nerveuse.
 - Ensuite on l'explique (« Tu as été nerveux, tu perds ! ») et **les nerveux se partagent le tas**. Le premier nerveux joue la carte suivante (choix provisoire).
 - Après une feinte, la main du joueur ressort automatiquement juste hors du cercle.
+
+## La partie s'accélère
+
+- La partie se découpe en **manches** : d'un ramassage au suivant.
+- **Chaque minute de jeu ajoute un niveau**, appliqué seulement **au début de la manche suivante** (jamais en pleine manche).
+- À chaque niveau : le **temps pour jouer sa carte baisse de 10 %** (5 s, 4,5 s, 4,05 s…) et les **cartes volent et se retournent 10 % plus vite**. Les ordinateurs jouent aussi plus vite.
+- Annonce **« La partie s'accélère ! »** en grand au milieu de l'écran.
 
 ## Fin de partie
 
@@ -126,6 +133,8 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 | Une carte est éjectée | « flushhh » |
 | Ramassage | « flushhh » et « flop » pour les cartes qui volent vers les tas |
 | Le tas grossit | battement de cœur, de plus en plus fort et rapide (70 à 140 par minute) à mesure que tu te penches |
+| Main qui touche le cercle | grésillement électrique discret, plus fort quand elle s'enfonce |
+| NERVOUS ! | une voix de synthèse crie « Nervous ! » (cri synthétisé de secours si aucune voix) |
 | Fin de partie | tous les effets s'arrêtent ; **défaite** : courte mélodie triste ; **victoire** : fanfare, applaudissements et cris de joie |
 
 ## Menu

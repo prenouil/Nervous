@@ -20,6 +20,8 @@ func _initialize() -> void:
 	_save("heartbeat", _heartbeat())
 	_save("defeat", _defeat())
 	_save("victory", _victory())
+	_save("buzz", _buzz())
+	_save("nervous_cry", _nervous_cry())
 	print("Sons générés dans res://sounds/")
 	quit()
 
@@ -210,6 +212,51 @@ func _echo(samples: PackedFloat32Array, delay: float, feedback: float) -> Packed
 	for i in range(offset, samples.size()):
 		samples[i] += samples[i - offset] * feedback
 	return samples
+
+
+# Bourdonnement électrique en boucle (0,5 s, un nombre entier de périodes) : ronflement
+# à 100 Hz et petits grésillements.
+func _buzz() -> PackedFloat32Array:
+	var out := _buffer(0.5)
+	var crackle := _lowpass(5000.0)
+	var spark := 0.0
+	for i in out.size():
+		var t := float(i) / RATE
+		var hum := 0.0
+		for h in range(1, 10):
+			hum += sin(TAU * 100.0 * h * t) / h
+		if rng.randf() < 0.002:
+			spark = rng.randf_range(0.5, 1.0)  # départ d'un grésillement
+		spark *= 0.995
+		var noise := rng.randf_range(-1.0, 1.0)
+		out[i] = hum * 0.35 + (noise - (crackle.call(noise) as float)) * spark * 0.8
+	return out
+
+
+# Cri de secours (si aucune voix de synthèse n'est disponible) : « nèèr-vouuuuuus ! »,
+# voix aiguë qui monte sur le « ou » puis retombe, avec un « s » soufflé à la fin.
+func _nervous_cry() -> PackedFloat32Array:
+	var duration := 1.7
+	var out := _buffer(duration)
+	var phase := 0.0
+	var f1 := _lowpass(500.0)
+	var f2 := _lowpass(500.0)
+	var hiss := _lowpass(7000.0)
+	for i in out.size():
+		var t := float(i) / RATE
+		var pitch := 260.0 + 140.0 * sin(PI * clampf((t - 0.25) / 1.2, 0.0, 1.0))
+		pitch *= 1.0 + 0.03 * sin(TAU * 6.0 * t)
+		phase += pitch / RATE
+		var saw := 2.0 * fposmod(phase, 1.0) - 1.0
+		# « nèr » : son plus ouvert (formant plus aigu) ; « vouuu » : son fermé et sombre.
+		var openness := 1.0 if t < 0.25 else 0.35
+		var voiced := f2.call(f1.call(saw)) as float
+		var bright := saw * 0.15 * openness
+		var env := minf(t / 0.03, 1.0) * (1.0 if t < 1.35 else maxf(0.0, 1.0 - (t - 1.35) / 0.15))
+		var noise := rng.randf_range(-1.0, 1.0)
+		var s := (noise - (hiss.call(noise) as float)) * (1.0 if t > 1.4 and t < 1.65 else 0.0) * 0.6
+		out[i] = (voiced * 2.2 + bright) * env + s
+	return out
 
 
 # --- Outils ------------------------------------------------------------------------
