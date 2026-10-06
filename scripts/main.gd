@@ -53,6 +53,8 @@ const WARNING_RED := Color(1.0, 0.1, 0.1)
 const WARNING_TREMBLE := 0.005    # tremblement (mètres) d'une main qui touche le cercle
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const BEACON_TIME := 2.0          # durée du gyrophare au-dessus des perdants
+const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "breath": 1, "siren": 1}
+const BREATH_VOLUME := Vector2(-34.0, -6.0)  # respiration : volume (dB) au début du penché, puis au maximum
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
 var server: GameServer
@@ -84,6 +86,8 @@ var _sway := Vector2.ZERO
 var _trauma := 0.0   # intensité du tremblement, les tapes s'additionnent
 var _tension := 0.0  # monte avec la taille du tas, retombe au ramassage
 var _tremor := 0.0   # tremblement des mains, à partir de la 10e carte
+var sounds := {}   # nom du groupe -> liste de variantes
+var _breath_player: AudioStreamPlayer
 var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
@@ -124,6 +128,7 @@ func _ready() -> void:
 		_build_seat(i)
 	_build_camera()
 	_build_hud()
+	_load_sounds()
 
 	server = GameServer.new()
 	server.name = "GameServer"
@@ -398,6 +403,7 @@ func _process(delta: float) -> void:
 	_update_heads(delta)
 	_update_left_hands()
 	_update_other_hands(delta)
+	_update_breath()
 	_update_hand_warnings()
 
 	if _turn_player >= 0:
@@ -670,12 +676,14 @@ func _on_card_played(player: int, card: int, center_count: int, landing: Vector2
 	var start := node.global_position
 	var end := Vector3(landing.x, center_count * CARD_T + 0.001, landing.y)
 	# Retournement vers soi : le bord proche se lève, la face se montre d'abord à l'adversaire d'en face.
+	_play_sound("flush", start, -12.0)  # la carte glisse du tas
 	var flight := node.create_tween()
 	node.set_meta("flight", flight)
 	flight.tween_method(func(t: float):
 		node.global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.09
 		node.global_basis = Basis(Vector3.UP, lerp_angle(seat_yaw, end_yaw, t)) * Basis(Vector3.RIGHT, -PI * (1.0 - t)),
 		0.0, 1.0, GameServer.CARD_TRAVEL)
+	flight.tween_callback(func(): _play_sound("flop", end, -3.0))
 
 	if player != HUMAN:
 		var hand := right_hands[player]
@@ -696,6 +704,7 @@ func _on_card_ejected(player: int, _card: int) -> void:
 	var end := Vector3(away.x, 1.2, away.y - 1.0)  # plutôt vers le fond, loin de la caméra
 	var spin_axis := Vector3(randf_range(-1, 1), 1, randf_range(-1, 1)).normalized()
 	var start_basis := node.global_basis
+	_play_sound("flush", start, -4.0)
 	var tw := node.create_tween()
 	tw.tween_method(func(t: float):
 		node.global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.6
@@ -890,6 +899,11 @@ func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 	var out := Table.outside_circle(Vector2(_hand_target.x, _hand_target.z))
 	_hand_target = Vector3(out.x, HAND_Y, out.y)
 	var takers: Array = shares.keys()
+	var total := 0
+	for p in takers:
+		total += shares[p]
+	if total > 0:
+		_play_ui_sound("siren", -10.0)
 	if reason == "timeout":  # pour les tapes, le verdict a déjà été annoncé
 		_show_message(_pile_message(shares, reason))
 		for p in takers:
@@ -959,10 +973,13 @@ func _animate_slap(p: int, pos: Vector2, order: int, stay: bool) -> void:
 	var outside := Table.outside_circle(pos)
 	var back := Vector3(outside.x, HAND_Y, outside.y) if p == HUMAN else _rest_pos(p)
 	var tw := _hand_tween(p)
+	_play_sound("grunt", _mouth_pos(p), -8.0)  # petit effort de celui qui tape
 	tw.tween_property(hand, "global_position", raised, 0.07).set_ease(Tween.EASE_OUT)
 	tw.tween_property(hand, "global_position", target, 0.07).set_ease(Tween.EASE_IN)
 	# Chaque tape ajoute du tremblement : des tapes simultanées s'additionnent.
-	tw.tween_callback(func(): _trauma = minf(TRAUMA_MAX, _trauma + (TRAUMA_HUMAN_SLAP if p == HUMAN else TRAUMA_SLAP)))
+	tw.tween_callback(func():
+		_play_sound("slap", target, 0.0 if order > 0 else -4.0)
+		_trauma = minf(TRAUMA_MAX, _trauma + (TRAUMA_HUMAN_SLAP if p == HUMAN else TRAUMA_SLAP)))
 	if not stay:
 		tw.tween_interval(0.15)
 		tw.tween_property(hand, "global_position", back, 0.12)
@@ -980,12 +997,16 @@ func _fly_to_deck(node: Node3D, p: int, delay: float) -> void:
 	var spins := float(randi_range(2, 4)) * TAU  # tours complets : l'orientation finale est respectée
 	var tw := node.create_tween()
 	tw.tween_interval(delay)
+	tw.tween_callback(func():
+		if randf() < 0.5:  # pas un souffle par carte : ce serait trop chargé
+			_play_sound("flush", start, -14.0))
 	tw.tween_method(func(t: float):
 		var u := 1.0 - t
 		node.global_position = start * u * u + control * 2.0 * u * t + target * t * t
 		node.global_basis = Basis(spin_axis, spins * t) * Basis(start_rot.slerp(end_rot, t))
 		node.scale = Vector3.ONE * (1.0 + 0.3 * sin(t * PI)),
 		0.0, 1.0, PICKUP_FLIGHT).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_callback(func(): _play_sound("flop", target, -10.0))
 	tw.tween_callback(node.queue_free)
 
 
@@ -1047,3 +1068,68 @@ func _tremor_offset(index: int, t: float) -> Vector3:
 		sin(t * 23.0 + k) + 0.5 * sin(t * 41.0 + k * 2.1),
 		0.3 * sin(t * 29.0 + k * 0.7),
 		sin(t * 31.0 + k * 1.3) + 0.5 * sin(t * 47.0 + k * 0.4)) / 1.5
+
+
+# --- Sons ---------------------------------------------------------------------------
+
+# Charge les variantes de chaque son (sounds/flop_1.wav…, sounds/breath.wav…).
+func _load_sounds() -> void:
+	for group in SOUND_GROUPS:
+		var variants: Array[AudioStream] = []
+		var count: int = SOUND_GROUPS[group]
+		for i in count:
+			var path := "res://sounds/%s.wav" % group if count == 1 else "res://sounds/%s_%d.wav" % [group, i + 1]
+			if ResourceLoader.exists(path):
+				variants.append(load(path))
+		sounds[group] = variants
+	_breath_player = AudioStreamPlayer.new()
+	_breath_player.volume_db = -80.0
+	add_child(_breath_player)
+	if not sounds["breath"].is_empty():
+		_breath_player.stream = sounds["breath"][0]
+		_breath_player.finished.connect(_breath_player.play)  # en boucle
+		_breath_player.play()
+
+
+# Joue une variante au hasard, placée dans la scène, avec un peu de variation de hauteur et de volume.
+func _play_sound(group: String, pos: Vector3, volume_db := 0.0) -> void:
+	var variants: Array = sounds.get(group, [])
+	if variants.is_empty():
+		return
+	var player := AudioStreamPlayer3D.new()
+	player.stream = variants.pick_random()
+	player.volume_db = volume_db + randf_range(-2.0, 1.0)
+	player.pitch_scale = randf_range(0.9, 1.1)
+	player.unit_size = 1.5
+	add_child(player)
+	player.global_position = pos
+	player.finished.connect(player.queue_free)
+	player.play()
+
+
+# Son non spatialisé (annonces).
+func _play_ui_sound(group: String, volume_db := 0.0) -> void:
+	var variants: Array = sounds.get(group, [])
+	if variants.is_empty():
+		return
+	var player := AudioStreamPlayer.new()
+	player.stream = variants.pick_random()
+	player.volume_db = volume_db
+	add_child(player)
+	player.finished.connect(player.queue_free)
+	player.play()
+
+
+func _mouth_pos(p: int) -> Vector3:
+	return heads[p].global_position if heads[p] != null else _camera_pos
+
+
+# Ta respiration s'entend de plus en plus à mesure que tu te penches au-dessus du tas.
+func _update_breath() -> void:
+	if _breath_player == null:
+		return
+	if _tension < 0.03:
+		_breath_player.volume_db = -80.0
+	else:
+		_breath_player.volume_db = lerpf(BREATH_VOLUME.x, BREATH_VOLUME.y, _tension)
+	_breath_player.pitch_scale = 1.0 + 0.3 * _tension  # on respire plus vite sous la tension

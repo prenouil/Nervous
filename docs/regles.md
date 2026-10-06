@@ -113,3 +113,16 @@ Deux cartes consécutives forment une paire si :
 
 - Moteur : **Godot 4** (GDScript).
 - Le multijoueur en ligne est prévu dès le départ. Les règles et l'ordre des tapes seront décidés par une seule autorité (le serveur, ou l'hôte), pour rester justes malgré la latence.
+
+## Sons
+
+Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (fichiers `.wav`). On peut remplacer n'importe lequel par un vrai enregistrement **en gardant le même nom**.
+
+| Moment | Son |
+|---|---|
+| Une carte quitte le tas | souffle « flushhh » (5 variantes) |
+| Une carte atterrit au centre | « flop » (5 variantes) |
+| Un joueur tape (ou feinte) | petit « hmpf » d'effort (3 variantes) puis « boum / plarf » (5 variantes) |
+| Une carte est éjectée | « flushhh » |
+| Ramassage | petite sirène douce, puis « flushhh » et « flop » pour les cartes qui volent vers les tas |
+| Le tas grossit | ta respiration, de plus en plus forte et rapide à mesure que tu te penches |
