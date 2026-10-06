@@ -47,6 +47,7 @@ const HAND_RADIUS := Table.HAND_RADIUS
 const WARNING_RED := Color(1.0, 0.1, 0.1)
 const WARNING_TREMBLE := 0.005    # tremblement (mètres) d'une main qui touche le cercle
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
+const BEACON_TIME := 2.0          # durée du gyrophare au-dessus des perdants
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
 var server: GameServer
@@ -704,6 +705,8 @@ func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
 func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int) -> void:
 	_turn_player = -1
 	_show_message(_pile_message(shares, reason), GameServer.REVEAL_TIME + 0.6)
+	for p in shares:
+		_spawn_beacon(p)
 	var k := 0
 	for i in range(_slap_sequence.size() - 1, -1, -1):
 		var p := _slap_sequence[i]
@@ -793,6 +796,60 @@ func _show_nervous_banner() -> void:
 		hud_nervous.rotation = 0.0)
 
 
+# Gyrophare au-dessus de la tête d'un perdant : dôme rouge et faisceaux qui tournent.
+# Pour le joueur humain (sans tête visible), il est juste au-dessus de la caméra :
+# on ne le voit pas, mais ses faisceaux balaient la table.
+func _spawn_beacon(p: int) -> void:
+	var beacon := Node3D.new()
+	add_child(beacon)
+	if heads[p] != null:
+		beacon.global_position = heads[p].global_position + Vector3(0, 0.12, 0)
+	else:
+		beacon.global_position = _camera_pos + Vector3(0, 0.12, 0.05)
+	var base := _box(Vector3(0.05, 0.015, 0.05), Color(0.15, 0.15, 0.15), Vector3.ZERO, beacon)
+	base.position.y = -0.03
+	var dome_mat := StandardMaterial3D.new()
+	dome_mat.albedo_color = Color(1.0, 0.1, 0.05)
+	dome_mat.emission_enabled = true
+	dome_mat.emission = Color(1.0, 0.05, 0.0)
+	dome_mat.emission_energy_multiplier = 3.0
+	var dome := MeshInstance3D.new()
+	var dome_mesh := SphereMesh.new()
+	dome_mesh.radius = 0.022
+	dome_mesh.height = 0.05
+	dome.mesh = dome_mesh
+	dome.material_override = dome_mat
+	beacon.add_child(dome)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(1.0, 0.1, 0.05)
+	glow.omni_range = 0.6
+	glow.light_energy = 2.0
+	beacon.add_child(glow)
+	# Deux faisceaux opposés, inclinés vers la table, qui tournent.
+	var pivot := Node3D.new()
+	beacon.add_child(pivot)
+	for side in [0.0, PI]:
+		var beam := SpotLight3D.new()
+		beam.light_color = Color(1.0, 0.08, 0.02)
+		beam.light_energy = 10.0
+		beam.spot_range = 3.0
+		beam.spot_angle = 22.0
+		beam.rotation = Vector3(-0.45, side, 0)
+		pivot.add_child(beam)
+	var spin := pivot.create_tween().set_loops()
+	spin.tween_property(pivot, "rotation:y", TAU, 0.45).from(0.0)
+	var flash := glow.create_tween().set_loops()
+	flash.tween_property(glow, "light_energy", 4.0, 0.12)
+	flash.tween_property(glow, "light_energy", 0.5, 0.12)
+	# Apparition en sautant, disparition après 2 secondes.
+	beacon.scale = Vector3.ONE * 0.1
+	var life := beacon.create_tween()
+	life.tween_property(beacon, "scale", Vector3.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	life.tween_interval(BEACON_TIME - 0.4)
+	life.tween_property(beacon, "scale", Vector3.ONE * 0.1, 0.2)
+	life.tween_callback(beacon.queue_free)
+
+
 func _clear_nervous_hands() -> void:
 	for hand in right_hands:
 		if hand.has_meta("nervous"):
@@ -818,6 +875,9 @@ func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 	var takers: Array = shares.keys()
 	if reason == "timeout":  # pour les tapes, le verdict a déjà été annoncé
 		_show_message(_pile_message(shares, reason))
+		for p in takers:
+			if shares[p] > 0:
+				_spawn_beacon(p)
 
 	# Les cartes du centre explosent vers le haut en tournoyant, puis plongent
 	# vers le tas de ceux qui ramassent (réparties une par une s'ils sont plusieurs).
