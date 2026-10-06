@@ -42,7 +42,7 @@ Deux cartes consécutives forment une paire si :
 - **Dès qu'un joueur tape, sa main bloque le tas** : plus personne ne joue. Les autres ont **3 secondes** pour taper eux aussi. Ensuite on juge si la première tape était valide.
 - Les mains s'empilent dans l'ordre d'arrivée. **L'ordre est essentiel.**
 - **Verdict** : quand tout le monde a tapé (ou à la fin des 3 secondes), on annonce les perdants. Les mains se retirent **une par une** (la dernière posée d'abord) et les cartes en cause **clignotent en rouge** : les deux cartes de la paire, ou la carte tapée à tort. Ensuite seulement, le tas est distribué.
-- **Gyrophare** : au moment du verdict (ou d'un ramassage pour temps écoulé), un gyrophare rouge apparaît **au-dessus de la tête de chaque perdant** pendant 2 s. Pour le joueur humain, il est au-dessus de la caméra : ses faisceaux balaient la table.
+- **Larmes** : chaque joueur qui ramasse **pleure à grosses larmes**, une par carte ramassée, et sa tête est secouée de sanglots. Pour le joueur humain, les larmes coulent devant la caméra, dans les coins bas de l'écran.
 - Les cartes ramassées sont toujours **mélangées puis placées sous le tas** de ceux qui ramassent, même s'ils n'avaient plus de cartes. Quand plusieurs joueurs se partagent le tas, les cartes sont distribuées une à une.
 
 ### Tape valide
@@ -124,7 +124,7 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 | Une carte atterrit au centre | « flop » (5 variantes) |
 | Un joueur tape (ou feinte) | petit « hmpf » d'effort (3 variantes) puis « boum / plarf » (5 variantes) |
 | Une carte est éjectée | « flushhh » |
-| Ramassage | petite sirène douce, puis « flushhh » et « flop » pour les cartes qui volent vers les tas |
+| Ramassage | « flushhh » et « flop » pour les cartes qui volent vers les tas |
 | Le tas grossit | battement de cœur, de plus en plus fort et rapide (70 à 140 par minute) à mesure que tu te penches |
 | Fin de partie | tous les effets s'arrêtent ; **défaite** : courte mélodie triste ; **victoire** : fanfare, applaudissements et cris de joie |
 

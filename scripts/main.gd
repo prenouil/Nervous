@@ -53,8 +53,8 @@ const HAND_RADIUS := Table.HAND_RADIUS
 const WARNING_RED := Color(1.0, 0.1, 0.1)
 const WARNING_TREMBLE := 0.005    # tremblement (mètres) d'une main qui touche le cercle
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
-const BEACON_TIME := 2.0          # durée du gyrophare au-dessus des perdants
-const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "siren": 1, "defeat": 1, "victory": 1}
+const TEARS_DURATION := 2.5      # durée des pleurs d'un perdant (les larmes se succèdent plus vite s'il y en a beaucoup)
+const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "defeat": 1, "victory": 1}
 const HEARTBEAT_BPM := Vector2(70.0, 140.0)    # battement de cœur : rythme au début du penché, puis au maximum
 const HEARTBEAT_VOLUME := Vector2(-28.0, -4.0)  # et volume (dB)
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
@@ -99,6 +99,7 @@ var _tension := 0.0  # monte avec la taille du tas, retombe au ramassage
 var _tremor := 0.0   # tremblement des mains, à partir de la 10e carte
 var sounds := {}   # nom du groupe -> liste de variantes
 var _beat_timer := 0.0
+var _tear_mat: StandardMaterial3D
 var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
@@ -773,8 +774,6 @@ func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
 func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int) -> void:
 	_turn_player = -1
 	_show_message(_pile_message(shares, reason), GameServer.REVEAL_TIME + 0.6)
-	for p in shares:
-		_spawn_beacon(p)
 	var k := 0
 	for i in range(_slap_sequence.size() - 1, -1, -1):
 		var p := _slap_sequence[i]
@@ -865,59 +864,72 @@ func _show_nervous_banner() -> void:
 		hud_nervous.rotation = 0.0)
 
 
-# Gyrophare au-dessus de la tête d'un perdant : dôme rouge et faisceaux qui tournent.
-# Pour le joueur humain (sans tête visible), il est juste au-dessus de la caméra :
-# on ne le voit pas, mais ses faisceaux balaient la table.
-func _spawn_beacon(p: int) -> void:
-	var beacon := Node3D.new()
-	beacon.add_to_group("fx")
-	add_child(beacon)
+# Un perdant pleure : une larme par carte ramassée, alternativement de chaque œil,
+# et la tête est secouée de sanglots.
+func _cry(p: int, tears: int) -> void:
+	var interval := clampf(TEARS_DURATION / tears, 0.06, 0.15)
+	var tw := create_tween()
+	for k in tears:
+		tw.tween_callback(_spawn_tear.bind(p, k % 2 == 0))
+		tw.tween_interval(interval)
+	var head := heads[p]
+	if head != null:
+		var sob := head.create_tween()
+		sob.tween_method(func(t: float):
+			head.position.y = HEAD_LOCAL.y + absf(sin(t * 22.0)) * 0.012,
+			0.0, tears * interval + 0.3, tears * interval + 0.3)
+		sob.tween_callback(func(): head.position.y = HEAD_LOCAL.y)
+
+
+func _spawn_tear(p: int, left_eye: bool) -> void:
+	if _game_over:
+		return
+	if _tear_mat == null:
+		_tear_mat = StandardMaterial3D.new()
+		_tear_mat.albedo_color = Color(0.45, 0.75, 1.0, 0.65)
+		_tear_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_tear_mat.roughness = 0.05
+		_tear_mat.emission_enabled = true
+		_tear_mat.emission = Color(0.2, 0.45, 0.8)
+		_tear_mat.emission_energy_multiplier = 0.4
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.011
+	mesh.height = 0.032  # goutte allongée
+	var tear := MeshInstance3D.new()
+	tear.mesh = mesh
+	tear.material_override = _tear_mat
+	tear.add_to_group("fx")
+	add_child(tear)
+	var side := -1.0 if left_eye else 1.0
+	var start: Vector3
+	var cheek: Vector3
+	var fall_to: float
 	if heads[p] != null:
-		beacon.global_position = heads[p].global_position + Vector3(0, 0.12, 0)
+		start = heads[p].to_global(Vector3(side * 0.032, -0.008, -0.088))  # sous l'œil
+		cheek = heads[p].to_global(Vector3(side * 0.05, -0.055, -0.07))    # au bas de la joue
+		fall_to = 0.004  # jusqu'à la table
 	else:
-		beacon.global_position = _camera_pos + Vector3(0, 0.12, 0.05)
-	var base := _box(Vector3(0.05, 0.015, 0.05), Color(0.15, 0.15, 0.15), Vector3.ZERO, beacon)
-	base.position.y = -0.03
-	var dome_mat := StandardMaterial3D.new()
-	dome_mat.albedo_color = Color(1.0, 0.1, 0.05)
-	dome_mat.emission_enabled = true
-	dome_mat.emission = Color(1.0, 0.05, 0.0)
-	dome_mat.emission_energy_multiplier = 3.0
-	var dome := MeshInstance3D.new()
-	var dome_mesh := SphereMesh.new()
-	dome_mesh.radius = 0.022
-	dome_mesh.height = 0.05
-	dome.mesh = dome_mesh
-	dome.material_override = dome_mat
-	beacon.add_child(dome)
-	var glow := OmniLight3D.new()
-	glow.light_color = Color(1.0, 0.1, 0.05)
-	glow.omni_range = 0.6
-	glow.light_energy = 2.0
-	beacon.add_child(glow)
-	# Deux faisceaux opposés, inclinés vers la table, qui tournent.
-	var pivot := Node3D.new()
-	beacon.add_child(pivot)
-	for side in [0.0, PI]:
-		var beam := SpotLight3D.new()
-		beam.light_color = Color(1.0, 0.08, 0.02)
-		beam.light_energy = 10.0
-		beam.spot_range = 3.0
-		beam.spot_angle = 22.0
-		beam.rotation = Vector3(-0.45, side, 0)
-		pivot.add_child(beam)
-	var spin := pivot.create_tween().set_loops()
-	spin.tween_property(pivot, "rotation:y", TAU, 0.45).from(0.0)
-	var flash := glow.create_tween().set_loops()
-	flash.tween_property(glow, "light_energy", 4.0, 0.12)
-	flash.tween_property(glow, "light_energy", 0.5, 0.12)
-	# Apparition en sautant, disparition après 2 secondes.
-	beacon.scale = Vector3.ONE * 0.1
-	var life := beacon.create_tween()
-	life.tween_property(beacon, "scale", Vector3.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	life.tween_interval(BEACON_TIME - 0.4)
-	life.tween_property(beacon, "scale", Vector3.ONE * 0.1, 0.2)
-	life.tween_callback(beacon.queue_free)
+		# Tes propres larmes : juste devant la caméra, dans les coins bas de l'écran.
+		start = camera.global_transform * Vector3(side * 0.07, -0.025, -0.16)
+		cheek = camera.global_transform * Vector3(side * 0.075, -0.07, -0.16)
+		fall_to = cheek.y - 0.25
+		tear.set_meta("own", true)
+	var land := Vector3(cheek.x + randf_range(-0.02, 0.02), fall_to, cheek.z + randf_range(-0.02, 0.02))
+	tear.global_position = start
+	tear.scale = Vector3.ONE * 0.3
+	var tw := tear.create_tween()
+	# La larme grossit au coin de l'œil, glisse sur la joue, puis tombe.
+	var size := 0.6 if tear.has_meta("own") else 1.0  # tes larmes sont tout près de la caméra : plus petites
+	tw.tween_property(tear, "scale", Vector3.ONE * size, 0.12)
+	tw.tween_property(tear, "global_position", cheek, 0.22).set_ease(Tween.EASE_IN)
+	var fall_time := sqrt(2.0 * maxf(0.01, cheek.y - fall_to) / 9.8)
+	tw.tween_method(func(t: float):
+		tear.global_position = cheek.lerp(land, t)
+		tear.global_position.y = lerpf(cheek.y, fall_to, t * t),
+		0.0, 1.0, fall_time)
+	tw.tween_property(tear, "scale", Vector3(2.2, 0.15, 2.2), 0.1)  # elle s'écrase
+	tw.tween_property(tear, "scale", Vector3.ZERO, 0.25)
+	tw.tween_callback(tear.queue_free)
 
 
 func _clear_nervous_hands() -> void:
@@ -943,16 +955,12 @@ func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 	var out := Table.outside_circle(Vector2(_hand_target.x, _hand_target.z))
 	_hand_target = Vector3(out.x, HAND_Y, out.y)
 	var takers: Array = shares.keys()
-	var total := 0
-	for p in takers:
-		total += shares[p]
-	if total > 0:
-		_play_ui_sound("siren", -10.0)
 	if reason == "timeout":  # pour les tapes, le verdict a déjà été annoncé
 		_show_message(_pile_message(shares, reason))
-		for p in takers:
-			if shares[p] > 0:
-				_spawn_beacon(p)
+	# Ceux qui ramassent pleurent : une grosse larme par carte ramassée.
+	for p in takers:
+		if shares[p] > 0:
+			_cry(p, shares[p])
 
 	# Les cartes du centre explosent vers le haut en tournoyant, puis plongent
 	# vers le tas de ceux qui ramassent (réparties une par une s'ils sont plusieurs).
@@ -1118,7 +1126,7 @@ func _tremor_offset(index: int, t: float) -> Vector3:
 
 # --- Sons ---------------------------------------------------------------------------
 
-# Charge les variantes de chaque son (sounds/flop_1.wav…, sounds/siren.wav…).
+# Charge les variantes de chaque son (sounds/flop_1.wav…, sounds/heartbeat.wav…).
 func _load_sounds() -> void:
 	for group in SOUND_GROUPS:
 		var variants: Array[AudioStream] = []

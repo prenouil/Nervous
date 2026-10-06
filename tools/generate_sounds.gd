@@ -20,7 +20,6 @@ func _initialize() -> void:
 	_save("heartbeat", _heartbeat())
 	_save("defeat", _defeat())
 	_save("victory", _victory())
-	_save("siren", _siren())
 	print("Sons générés dans res://sounds/")
 	quit()
 
@@ -211,21 +210,6 @@ func _echo(samples: PackedFloat32Array, delay: float, feedback: float) -> Packed
 	for i in range(offset, samples.size()):
 		samples[i] += samples[i - offset] * feedback
 	return samples
-
-
-# Petite sirène douce : un « ouin-ouin » sinusoïdal qui monte et descend deux fois.
-func _siren() -> PackedFloat32Array:
-	var duration := 1.8
-	var out := _buffer(duration)
-	var phase := 0.0
-	for i in out.size():
-		var t := float(i) / RATE
-		var freq := 720.0 + 170.0 * sin(TAU * 1.1 * t - PI / 2.0)
-		phase += TAU * freq / RATE
-		var tone := sin(phase) + 0.2 * sin(2.0 * phase)
-		var env := minf(t / 0.12, 1.0) * minf((duration - t) / 0.35, 1.0)
-		out[i] = tone * env
-	return out
 
 
 # --- Outils ------------------------------------------------------------------------
