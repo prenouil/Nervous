@@ -17,7 +17,9 @@ func _initialize() -> void:
 		_save("slap_%d" % (i + 1), _slap(i))
 	for i in 3:
 		_save("grunt_%d" % (i + 1), _grunt(i))
-	_save("breath", _breath())
+	_save("heartbeat", _heartbeat())
+	_save("defeat", _defeat())
+	_save("victory", _victory())
 	_save("siren", _siren())
 	print("Sons générés dans res://sounds/")
 	quit()
@@ -98,22 +100,117 @@ func _grunt(v: int) -> PackedFloat32Array:
 	return out
 
 
-# Respiration en boucle : inspiration aiguë et légère, expiration plus grave et plus forte.
-func _breath() -> PackedFloat32Array:
-	var out := _buffer(3.4)
-	var phases := [[0.0, 1.3, 520.0, 2300.0, 0.55], [1.5, 3.0, 220.0, 1100.0, 1.0]]
-	for phase_def in phases:
-		var start: float = phase_def[0]
-		var stop: float = phase_def[1]
-		var low := _lowpass(phase_def[2])
-		var high := _lowpass(phase_def[3])
-		var gain: float = phase_def[4]
-		for i in range(int(start * RATE), int(stop * RATE)):
-			var u := (float(i) / RATE - start) / (stop - start)
-			var noise := rng.randf_range(-1.0, 1.0)
-			var band := high.call(noise - (low.call(noise) as float)) as float
-			out[i] = band * pow(sin(PI * u), 1.4) * gain
+# Battement de cœur : « boum-boum », deux chocs sourds et graves (un battement par fichier).
+func _heartbeat() -> PackedFloat32Array:
+	var out := _buffer(0.5)
+	for beat in [[0.0, 1.0, 58.0], [0.2, 0.7, 50.0]]:
+		var start: float = beat[0]
+		var gain: float = beat[1]
+		var freq: float = beat[2]
+		var phase := 0.0
+		for i in range(int(start * RATE), out.size()):
+			var t := float(i) / RATE - start
+			phase += TAU * freq * (1.0 + 0.6 * exp(-t / 0.02)) / RATE
+			var env := (1.0 - exp(-t / 0.004)) * exp(-t / 0.055)
+			out[i] += (sin(phase) + 0.3 * sin(2.0 * phase)) * env * gain
 	return out
+
+
+# Défaite : courte mélodie triste et lente en la mineur, sur un accord tenu, avec un peu d'écho.
+func _defeat() -> PackedFloat32Array:
+	var out := _buffer(5.0)
+	var melody := [[0.0, 0.7, 329.6], [0.7, 0.7, 293.7], [1.4, 0.7, 261.6], [2.1, 1.9, 246.9]]  # mi ré do si
+	for note in melody:
+		_add_note(out, note[0], note[1], note[2], 0.55, false)
+	for freq in [110.0, 130.8, 164.8]:  # la, do, mi graves
+		_add_note(out, 0.0, 4.0, freq, 0.18, false)
+	return _echo(out, 0.28, 0.35)
+
+
+# Victoire : fanfare de cuivres, applaudissements et cris de joie.
+func _victory() -> PackedFloat32Array:
+	var out := _buffer(5.5)
+	var fanfare := [[0.0, 0.14, 392.0], [0.16, 0.14, 523.3], [0.32, 0.14, 659.3], [0.48, 0.45, 784.0],
+		[0.96, 0.14, 659.3], [1.12, 1.3, 784.0]]  # sol do mi sol… mi sol
+	for note in fanfare:
+		_add_note(out, note[0], note[1], note[2], 0.5, true)
+	for freq in [261.6, 329.6, 523.3]:  # accord final de do majeur
+		_add_note(out, 1.12, 1.3, freq, 0.28, true)
+	_add_applause(out, 0.9, 5.4)
+	_add_cheers(out, 1.0, 4.2)
+	return _echo(out, 0.18, 0.2)
+
+
+# Note jouée : timbre cuivré (brass) ou doux, avec attaque, vibrato et extinction.
+func _add_note(out: PackedFloat32Array, start: float, duration: float, freq: float, gain: float, brass: bool) -> void:
+	var release := 0.25 if brass else 0.6
+	var first := int(start * RATE)
+	var last := mini(out.size(), int((start + duration + release) * RATE))
+	var phase := 0.0
+	for i in range(first, last):
+		var t := float(i) / RATE - start
+		var vibrato := 1.0 + 0.006 * sin(TAU * 5.5 * t) * minf(t / 0.3, 1.0)
+		phase += TAU * freq * vibrato / RATE
+		var wave := 0.0
+		if brass:
+			var brightness := minf(t / 0.05, 1.0)  # le son s'ouvre à l'attaque
+			for h in range(1, 8):
+				wave += sin(phase * h) / h * (1.0 if h <= 2 else brightness)
+		else:
+			for h in [1, 3, 5]:
+				wave += sin(phase * h) / (h * h)  # timbre doux, proche d'un triangle
+		var attack := minf(t / (0.02 if brass else 0.08), 1.0)
+		var tail := 1.0 if t < duration else exp(-(t - duration) / (release * 0.35))
+		out[i] += wave * attack * tail * gain
+
+
+# Applaudissements : beaucoup de petits claquements de bruit, denses au milieu.
+func _add_applause(out: PackedFloat32Array, start: float, stop: float) -> void:
+	var claps := int((stop - start) * 90.0)
+	for c in claps:
+		var u := rng.randf()
+		var at := start + u * (stop - start)
+		var density := sin(PI * u)
+		if rng.randf() > density:
+			continue
+		var lp := _lowpass(rng.randf_range(1800.0, 4500.0))
+		var gain := rng.randf_range(0.15, 0.35)
+		for i in range(int(at * RATE), mini(out.size(), int((at + 0.03) * RATE))):
+			var t := float(i) / RATE - at
+			out[i] += (lp.call(rng.randf_range(-1.0, 1.0)) as float) * exp(-t / 0.006) * gain
+
+
+# Cris de joie : voix aiguës qui montent (« ouaaais ! »), plus un brouhaha de foule.
+func _add_cheers(out: PackedFloat32Array, start: float, stop: float) -> void:
+	for voice in 6:
+		var at := start + rng.randf_range(0.0, 1.0)
+		var length := rng.randf_range(0.8, 1.6)
+		var base := rng.randf_range(260.0, 480.0)
+		var formant := _lowpass(rng.randf_range(900.0, 1500.0))
+		var formant2 := _lowpass(rng.randf_range(900.0, 1500.0))
+		var phase := 0.0
+		for i in range(int(at * RATE), mini(out.size(), int((at + length) * RATE))):
+			var t := float(i) / RATE - at
+			var u := t / length
+			var freq := base * (1.0 + 0.35 * sin(PI * minf(u * 1.6, 1.0))) * (1.0 + 0.02 * sin(TAU * 6.0 * t))
+			phase += freq / RATE
+			var saw := 2.0 * fposmod(phase, 1.0) - 1.0
+			var env := minf(t / 0.05, 1.0) * pow(1.0 - u, 0.8)
+			out[i] += (formant2.call(formant.call(saw)) as float) * env * 0.5
+	var low := _lowpass(400.0)
+	var high := _lowpass(2500.0)
+	for i in range(int(start * RATE), mini(out.size(), int(stop * RATE))):
+		var u := (float(i) / RATE - start) / (stop - start)
+		var noise := rng.randf_range(-1.0, 1.0)
+		out[i] += (high.call(noise - (low.call(noise) as float)) as float) * sin(PI * u) * 0.25
+
+
+# Écho simple : le son se répète, plus faible, après un court délai.
+func _echo(samples: PackedFloat32Array, delay: float, feedback: float) -> PackedFloat32Array:
+	var offset := int(delay * RATE)
+	for i in range(offset, samples.size()):
+		samples[i] += samples[i - offset] * feedback
+	return samples
 
 
 # Petite sirène douce : un « ouin-ouin » sinusoïdal qui monte et descend deux fois.

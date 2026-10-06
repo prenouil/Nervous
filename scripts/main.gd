@@ -53,8 +53,9 @@ const WARNING_RED := Color(1.0, 0.1, 0.1)
 const WARNING_TREMBLE := 0.005    # tremblement (mètres) d'une main qui touche le cercle
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const BEACON_TIME := 2.0          # durée du gyrophare au-dessus des perdants
-const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "breath": 1, "siren": 1}
-const BREATH_VOLUME := Vector2(-34.0, -6.0)  # respiration : volume (dB) au début du penché, puis au maximum
+const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat": 1, "siren": 1, "defeat": 1, "victory": 1}
+const HEARTBEAT_BPM := Vector2(70.0, 140.0)    # battement de cœur : rythme au début du penché, puis au maximum
+const HEARTBEAT_VOLUME := Vector2(-28.0, -4.0)  # et volume (dB)
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
 var server: GameServer
@@ -87,7 +88,7 @@ var _trauma := 0.0   # intensité du tremblement, les tapes s'additionnent
 var _tension := 0.0  # monte avec la taille du tas, retombe au ramassage
 var _tremor := 0.0   # tremblement des mains, à partir de la 10e carte
 var sounds := {}   # nom du groupe -> liste de variantes
-var _breath_player: AudioStreamPlayer
+var _beat_timer := 0.0
 var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
@@ -403,7 +404,7 @@ func _process(delta: float) -> void:
 	_update_heads(delta)
 	_update_left_hands()
 	_update_other_hands(delta)
-	_update_breath()
+	_update_heartbeat(delta)
 	_update_hand_warnings()
 
 	if _turn_player >= 0:
@@ -422,7 +423,8 @@ func _update_camera(delta: float) -> void:
 	var target := (offset / SWAY_HAND_RANGE).clamp(Vector2(-1, -1), Vector2(1, 1))
 	_sway = _sway.lerp(target, minf(1.0, delta * 6.0))
 	# Plus le tas grossit, plus on se penche au-dessus de la table.
-	_tension = lerpf(_tension, clampf(center_cards.size() / TENSION_CARDS, 0.0, 1.0), minf(1.0, delta * 3.0))
+	var tension_goal := 0.0 if _game_over else clampf(center_cards.size() / TENSION_CARDS, 0.0, 1.0)
+	_tension = lerpf(_tension, tension_goal, minf(1.0, delta * 3.0))
 	var shake := pow(_trauma, 1.5)
 	var roll := randf_range(-1, 1) * SHAKE_ANGLE * shake
 	var pitch := randf_range(-1, 1) * SHAKE_ANGLE * shake
@@ -795,6 +797,7 @@ func _on_player_nervous(player: int, order: int) -> void:
 	light.omni_range = 0.35
 	light.position = Vector3(0, 0.08, 0)
 	hand.add_child(light)
+	light.add_to_group("fx")
 	var blink := light.create_tween().set_loops()
 	blink.tween_property(light, "light_energy", 6.0, 0.1)
 	blink.tween_property(light, "light_energy", 0.0, 0.1)
@@ -827,6 +830,7 @@ func _show_nervous_banner() -> void:
 # on ne le voit pas, mais ses faisceaux balaient la table.
 func _spawn_beacon(p: int) -> void:
 	var beacon := Node3D.new()
+	beacon.add_to_group("fx")
 	add_child(beacon)
 	if heads[p] != null:
 		beacon.global_position = heads[p].global_position + Vector3(0, 0.12, 0)
@@ -936,6 +940,8 @@ func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 func _on_game_over(loser: int) -> void:
 	_game_over = true
 	_turn_player = -1
+	_stop_effects()
+	_play_end_music(loser != HUMAN)
 	if loser == HUMAN:
 		_show_message("Tu as perdu !\nAppuie sur R pour rejouer", 1e9)
 	else:
@@ -1072,7 +1078,7 @@ func _tremor_offset(index: int, t: float) -> Vector3:
 
 # --- Sons ---------------------------------------------------------------------------
 
-# Charge les variantes de chaque son (sounds/flop_1.wav…, sounds/breath.wav…).
+# Charge les variantes de chaque son (sounds/flop_1.wav…, sounds/siren.wav…).
 func _load_sounds() -> void:
 	for group in SOUND_GROUPS:
 		var variants: Array[AudioStream] = []
@@ -1082,18 +1088,13 @@ func _load_sounds() -> void:
 			if ResourceLoader.exists(path):
 				variants.append(load(path))
 		sounds[group] = variants
-	_breath_player = AudioStreamPlayer.new()
-	_breath_player.volume_db = -80.0
-	add_child(_breath_player)
-	if not sounds["breath"].is_empty():
-		_breath_player.stream = sounds["breath"][0]
-		_breath_player.finished.connect(_breath_player.play)  # en boucle
-		_breath_player.play()
 
 
 # Joue une variante au hasard, placée dans la scène, avec un peu de variation de hauteur et de volume.
 func _play_sound(group: String, pos: Vector3, volume_db := 0.0) -> void:
 	var variants: Array = sounds.get(group, [])
+	if _game_over:
+		return  # partie finie : plus aucun bruitage
 	if variants.is_empty():
 		return
 	var player := AudioStreamPlayer3D.new()
@@ -1104,12 +1105,15 @@ func _play_sound(group: String, pos: Vector3, volume_db := 0.0) -> void:
 	add_child(player)
 	player.global_position = pos
 	player.finished.connect(player.queue_free)
+	player.add_to_group("sfx")
 	player.play()
 
 
 # Son non spatialisé (annonces).
 func _play_ui_sound(group: String, volume_db := 0.0) -> void:
 	var variants: Array = sounds.get(group, [])
+	if _game_over:
+		return
 	if variants.is_empty():
 		return
 	var player := AudioStreamPlayer.new()
@@ -1117,6 +1121,7 @@ func _play_ui_sound(group: String, volume_db := 0.0) -> void:
 	player.volume_db = volume_db
 	add_child(player)
 	player.finished.connect(player.queue_free)
+	player.add_to_group("sfx")
 	player.play()
 
 
@@ -1124,12 +1129,36 @@ func _mouth_pos(p: int) -> Vector3:
 	return heads[p].global_position if heads[p] != null else _camera_pos
 
 
-# Ta respiration s'entend de plus en plus à mesure que tu te penches au-dessus du tas.
-func _update_breath() -> void:
-	if _breath_player == null:
+# Battement de cœur : il démarre quand tu te penches au-dessus du tas, s'accélère et s'amplifie.
+func _update_heartbeat(delta: float) -> void:
+	if _game_over or _tension < 0.03:
+		_beat_timer = 0.0
 		return
-	if _tension < 0.03:
-		_breath_player.volume_db = -80.0
-	else:
-		_breath_player.volume_db = lerpf(BREATH_VOLUME.x, BREATH_VOLUME.y, _tension)
-	_breath_player.pitch_scale = 1.0 + 0.3 * _tension  # on respire plus vite sous la tension
+	_beat_timer += delta
+	if _beat_timer >= 60.0 / lerpf(HEARTBEAT_BPM.x, HEARTBEAT_BPM.y, _tension):
+		_beat_timer = 0.0
+		_play_ui_sound("heartbeat", lerpf(HEARTBEAT_VOLUME.x, HEARTBEAT_VOLUME.y, _tension))
+
+
+# Fin de partie : on coupe tous les effets visuels et sonores en cours.
+func _stop_effects() -> void:
+	_trauma = 0.0
+	_tremor = 0.0
+	hud_nervous.visible = false
+	_clear_nervous_hands()
+	for node in get_tree().get_nodes_in_group("fx"):
+		node.queue_free()
+	for player in get_tree().get_nodes_in_group("sfx"):
+		player.stop()
+		player.queue_free()
+
+
+func _play_end_music(victory: bool) -> void:
+	var variants: Array = sounds.get("victory" if victory else "defeat", [])
+	if variants.is_empty():
+		return
+	var player := AudioStreamPlayer.new()
+	player.stream = variants[0]
+	player.volume_db = -4.0
+	add_child(player)
+	player.play()

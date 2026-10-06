@@ -125,4 +125,5 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 | Un joueur tape (ou feinte) | petit « hmpf » d'effort (3 variantes) puis « boum / plarf » (5 variantes) |
 | Une carte est éjectée | « flushhh » |
 | Ramassage | petite sirène douce, puis « flushhh » et « flop » pour les cartes qui volent vers les tas |
-| Le tas grossit | ta respiration, de plus en plus forte et rapide à mesure que tu te penches |
+| Le tas grossit | battement de cœur, de plus en plus fort et rapide (70 à 140 par minute) à mesure que tu te penches |
+| Fin de partie | tous les effets s'arrêtent ; **défaite** : courte mélodie triste ; **victoire** : fanfare, applaudissements et cris de joie |
