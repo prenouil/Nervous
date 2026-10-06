@@ -4,6 +4,7 @@ extends Node
 
 const GameServer = preload("res://scripts/game_server.gd")
 const Cards = preload("res://scripts/cards.gd")
+const Table = preload("res://scripts/table.gd")
 
 const PLAY_DELAY := Vector2(0.6, 1.5)       # temps pour jouer sa carte
 const HESITATION := Vector2(0.1, 1.0)       # malus quand les deux cartes du dessus se ressemblent
@@ -14,6 +15,9 @@ const MISTAKE_CHANCE := 0.1                 # chance (par ordinateur) de taper p
 const FOLLOW_CHANCE := 0.1                  # chance de suivre par réflexe une tape par erreur, retirée à chaque tape
 const FOLLOW_CHANCE_OWN_CARD := 0.2         # idem pour celui qui a joué la carte (il l'a mal vue)
 const AIM_ERROR := 0.02                     # imprécision (mètres) quand ils visent la carte du dessus
+const TENSION_CHANCE := 0.35                # cartes qui se ressemblent : la main s'approche du cercle...
+const CROSS_CHANCE := 0.08                  # ...et peut franchir la ligne (nerveux s'il ne tape pas)
+const CONTAGION_CHANCE := 0.2               # quelqu'un est nerveux : chance de l'être aussi
 
 var seat := 0
 var server: GameServer
@@ -24,6 +28,7 @@ var _pair_visible := false     # d'après ce que l'ordinateur a vu, taper est l�
 var _play_token := 0           # invalide une action prévue devenue obsolète
 var _slap_token := 0
 var _slap_scheduled := false  # une tape est déjà prévue ou envoyée
+var _hand_token := 0           # invalide un mouvement de main prévu devenu obsolète
 
 
 func setup(p_seat: int, p_server: GameServer) -> void:
@@ -37,6 +42,7 @@ func setup(p_seat: int, p_server: GameServer) -> void:
 	server.slap_window_opened.connect(_on_slap_window_opened)
 	server.slap_window_closed.connect(_cancel_slap)
 	server.slap_registered.connect(_on_slap_registered)
+	server.player_nervous.connect(_on_player_nervous)
 	server.slap_missed.connect(func(player, _pos): _on_slap_registered(player, 0, Vector2.ZERO))
 
 
@@ -57,8 +63,43 @@ func _on_card_played(player: int, card: int, _center_count: int, _pos: Vector2, 
 	_center.append(card)
 	_last_player = player
 	# Les cartes se ressemblent : parfois on tape par erreur (sauf celui qui vient de jouer).
-	if player != seat and _top_cards_look_alike() and rng.randf() < MISTAKE_CHANCE:
-		_schedule_slap(GameServer.CARD_TRAVEL + _reaction_time())
+	if player != seat and _top_cards_look_alike():
+		if rng.randf() < MISTAKE_CHANCE:
+			_schedule_slap(GameServer.CARD_TRAVEL + _reaction_time())
+		if rng.randf() < TENSION_CHANCE:
+			_creep(rng.randf() < CROSS_CHANCE)
+
+
+# La main s'avance vers le cercle (et le touche), puis revient au repos.
+# Si elle franchit la ligne sans taper, l'ordinateur sera déclaré nerveux.
+func _creep(cross: bool) -> void:
+	_hand_token += 1
+	var token := _hand_token
+	var depth := rng.randf_range(0.04, 0.06) if cross else rng.randf_range(0.0, Table.LINE_TOLERANCE * 0.8)
+	_after(GameServer.CARD_TRAVEL + rng.randf_range(0.1, 0.4), func():
+		if token != _hand_token:
+			return
+		server.update_hand(seat, _toward_center(depth))
+		_after(rng.randf_range(0.6, 1.2), func():
+			if token == _hand_token:
+				server.update_hand(seat, Table.right_hand_rest(seat))))
+
+
+# Quelqu'un vient d'être nerveux : sursaut, la main part dans le cercle.
+func _on_player_nervous(player: int, order: int) -> void:
+	if player == seat or order != 1 or rng.randf() >= CONTAGION_CHANCE:
+		return
+	_hand_token += 1
+	var token := _hand_token
+	_after(rng.randf_range(0.1, 0.4), func():
+		if token == _hand_token:
+			server.update_hand(seat, _toward_center(rng.randf_range(0.05, 0.08))))
+
+
+# Position sur le chemin repos → centre où la paume empiète de depth sur le cercle.
+func _toward_center(depth: float) -> Vector2:
+	var rest := Table.right_hand_rest(seat)
+	return rest.normalized() * (Table.CIRCLE_RADIUS + Table.HAND_RADIUS - depth)
 
 
 # Deux cartes qui se ressemblent sans former une paire (valeurs voisines et même symbole)
@@ -99,6 +140,8 @@ func _on_slap_registered(player: int, _order: int, _pos: Vector2) -> void:
 func _on_pile_taken(_shares: Dictionary, _reason: String) -> void:
 	_center.clear()
 	_cancel_slap()
+	_hand_token += 1
+	server.update_hand(seat, Table.right_hand_rest(seat))
 
 
 func _cancel_slap() -> void:

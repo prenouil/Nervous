@@ -3,6 +3,7 @@
 extends SceneTree
 
 const GameServer = preload("res://scripts/game_server.gd")
+const Table = preload("res://scripts/table.gd")
 
 var failures := 0
 var server: GameServer
@@ -71,6 +72,45 @@ func _run() -> void:
 	var hand := server._slap_positions[0]
 	server.request_slap(3, hand + Vector2(0.06, 0.0))
 	_expect(server._slap_order == [2, 3], "tape sur une main déjà posée : prise en compte")
+
+	# 6. Nervosité : franchir la ligne puis taper à temps, aucun problème.
+	var inside := Vector2(0, Table.CIRCLE_RADIUS - 0.02)    # main bien dans le cercle
+	var outside := Vector2(0, Table.CIRCLE_RADIUS + 0.2)
+	_new_server([[1, 3], [14, 3], [8, 9], [10, 11]])
+	var nervous := []
+	server.player_nervous.connect(func(p, _o): nervous.append(p))
+	_play_from(0)
+	server.update_hand(2, inside)
+	await _wait(GameServer.NERVOUS_GRACE * 0.5)
+	server.request_slap(2, Vector2(0.5, 0.5))   # feinte : ça compte comme avoir tapé
+	server.update_hand(2, outside)
+	await _wait(GameServer.NERVOUS_GRACE + 0.2)
+	_expect(nervous.is_empty(), "ligne franchie puis tape à temps : pas nerveux")
+
+	# 7. Ligne franchie sans taper : nerveux après le délai ; contagion dans les 0,5 s.
+	_new_server([[1, 3], [14, 3], [8, 9], [10, 11]])
+	nervous = []
+	server.player_nervous.connect(func(p, _o): nervous.append(p))
+	_play_from(0)
+	server.update_hand(3, inside)
+	await _wait(GameServer.NERVOUS_GRACE + 0.2)
+	_expect(nervous == [3] and server.state == GameServer.State.NERVOUS, "ligne franchie sans taper : nerveux")
+	server.update_hand(1, inside)              # contagion
+	await _wait(GameServer.NERVOUS_CONTAGION + 0.2)
+	server.update_hand(2, inside)              # trop tard
+	_expect(nervous == [3, 1], "contagion dans les 0,5 s seulement : %s" % [nervous])
+	await _wait(GameServer.NERVOUS_SHOW + GameServer.REVEAL_TIME)
+	_expect(last_take.get("reason") == "nervous" and last_take.get("shares", {}).keys() == [3, 1],
+		"les nerveux se partagent le tas : %s" % [last_take])
+
+	# 8. Main ramenée sans avoir tapé : nerveux tout de suite.
+	_new_server([[1, 3], [14, 3], [8, 9], [10, 11]])
+	nervous = []
+	server.player_nervous.connect(func(p, _o): nervous.append(p))
+	_play_from(0)
+	server.update_hand(1, inside)
+	server.update_hand(1, outside)
+	_expect(nervous == [1], "main ramenée sans taper : nerveux")
 
 	print("OK" if failures == 0 else "%d ÉCHEC(S)" % failures)
 	quit(failures)

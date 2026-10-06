@@ -6,6 +6,7 @@ extends Node3D
 const GameServer = preload("res://scripts/game_server.gd")
 const BotPlayer = preload("res://scripts/bot_player.gd")
 const Cards = preload("res://scripts/cards.gd")
+const Table = preload("res://scripts/table.gd")
 
 const SEATS := 4
 const HUMAN := 0
@@ -15,14 +16,14 @@ const SKIN_COLORS := [
 	Color(0.98, 0.82, 0.70), Color(0.80, 0.60, 0.42)]
 const HAIR_COLORS := [Color.BLACK, Color(0.15, 0.1, 0.08), Color(0.85, 0.35, 0.1), Color(0.9, 0.85, 0.6)]
 
-const SEAT_RADIUS := 0.55
+const SEAT_RADIUS := Table.SEAT_RADIUS
 const CARD_W := Cards.CARD_W
 const CARD_L := Cards.CARD_L
 const CARD_T := 0.0016
 const PALM_H := 0.022
 const HAND_Y := 0.03
 const LEFT_HAND_LOCAL := Vector3(-0.19, HAND_Y, -0.14)
-const RIGHT_HAND_LOCAL := Vector3(0.19, HAND_Y, -0.14)
+const RIGHT_HAND_LOCAL := Vector3(Table.RIGHT_HAND_LOCAL.x, HAND_Y, Table.RIGHT_HAND_LOCAL.y)
 const HEAD_LOCAL := Vector3(0, 0.34, 0.15)
 
 const GRAB_RADIUS := 0.09         # distance au tas pour pouvoir saisir une carte
@@ -42,7 +43,9 @@ const HEAD_CHAOS_CHANCE := 0.2    # chance de regarder ailleurs, au hasard
 const HEAD_TURN_SPEED := 7.0      # vitesse de rotation des visages
 const LEFT_SWAY_RADIUS := 0.012   # amplitude du balancier de la main gauche (mètres)
 const DECK_CLEARANCE := 0.012     # marge de la main droite au-dessus du tas de la main gauche
-const HAND_RADIUS := 0.045        # rayon de la paume
+const HAND_RADIUS := Table.HAND_RADIUS
+const WARNING_RED := Color(1.0, 0.1, 0.1)
+const WARNING_TREMBLE := 0.005    # tremblement (mètres) d'une main qui touche le cercle
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
@@ -66,6 +69,8 @@ var _left_phase: Array[Vector3] = []  # balancier de la main gauche : deux fréq
 var _slap_sequence: Array[int] = []    # joueurs dont la main est posée sur le tas, dans l'ordre
 var _head_targets: Array[Vector3] = []
 var _head_retarget: Array[float] = []
+var _bot_hand_goal: Array[Vector3] = []  # position annoncée par le serveur pour la main droite des autres joueurs
+var hud_nervous: Label
 
 var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
@@ -102,6 +107,7 @@ func _ready() -> void:
 		_left_phase.append(Vector3(randf_range(0.7, 1.3), randf_range(0.7, 1.3), randf() * TAU))
 		_head_targets.append(Vector3.ZERO)
 		_head_retarget.append(0.0)
+		_bot_hand_goal.append(Vector3.ZERO)
 
 	_build_environment()
 	_build_table()
@@ -122,6 +128,8 @@ func _ready() -> void:
 	server.card_ejected.connect(_on_card_ejected)
 	server.pile_taken.connect(_on_pile_taken)
 	server.game_over.connect(_on_game_over)
+	server.hand_moved.connect(_on_hand_moved)
+	server.player_nervous.connect(_on_player_nervous)
 	for i in range(1, SEATS):
 		var bot := BotPlayer.new()
 		bot.name = "Bot%d" % i
@@ -129,6 +137,8 @@ func _ready() -> void:
 		bot.setup(i, server)
 
 	_hand_target = _rest_pos(HUMAN)
+	for p in SEATS:
+		_bot_hand_goal[p] = _rest_pos(p)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	server.start_game.call_deferred(SEATS)
 
@@ -196,8 +206,21 @@ func _build_environment() -> void:
 
 
 func _build_table() -> void:
-	_box(Vector3(1.3, 0.04, 1.3), Color(0.1, 0.42, 0.2), Vector3(0, -0.02, 0), self)
-	_box(Vector3(1.42, 0.06, 1.42), Color(0.35, 0.2, 0.1), Vector3(0, -0.035, 0), self)
+	_box(Vector3(Table.TABLE_SIZE, 0.04, Table.TABLE_SIZE), Color(0.1, 0.42, 0.2), Vector3(0, -0.02, 0), self)
+	_box(Vector3(Table.TABLE_SIZE + 0.12, 0.06, Table.TABLE_SIZE + 0.12), Color(0.35, 0.2, 0.1), Vector3(0, -0.035, 0), self)
+	# Cercle rouge : une main qui franchit la ligne doit taper, sinon elle est nerveuse.
+	var ring := TorusMesh.new()
+	ring.inner_radius = Table.CIRCLE_RADIUS - 0.005
+	ring.outer_radius = Table.CIRCLE_RADIUS + 0.005
+	var ring_mat := StandardMaterial3D.new()
+	ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ring_mat.albedo_color = Color(0.85, 0.08, 0.08)
+	var ring_inst := MeshInstance3D.new()
+	ring_inst.mesh = ring
+	ring_inst.material_override = ring_mat
+	ring_inst.scale = Vector3(1, 0.1, 1)
+	ring_inst.position.y = 0.0005
+	add_child(ring_inst)
 
 
 func _build_seat(i: int) -> void:
@@ -232,11 +255,14 @@ func _build_seat(i: int) -> void:
 
 func _make_hand(skin: Color, is_left: bool) -> Node3D:
 	var hand := Node3D.new()
-	_box(Vector3(0.075, PALM_H, 0.085), skin, Vector3(0, PALM_H / 2.0, 0), hand)
+	var visual := Node3D.new()  # porte les formes : on le fait trembler sans déplacer la main
+	visual.name = "Visual"
+	hand.add_child(visual)
+	_box(Vector3(0.075, PALM_H, 0.085), skin, Vector3(0, PALM_H / 2.0, 0), visual)
 	for k in 4:
-		_box(Vector3(0.015, 0.016, 0.05), skin, Vector3(-0.027 + k * 0.018, 0.008, -0.065), hand)
+		_box(Vector3(0.015, 0.016, 0.05), skin, Vector3(-0.027 + k * 0.018, 0.008, -0.065), visual)
 	var side := 1.0 if is_left else -1.0
-	var thumb := _box(Vector3(0.018, 0.016, 0.04), skin, Vector3(side * 0.045, 0.008, -0.01), hand)
+	var thumb := _box(Vector3(0.018, 0.016, 0.04), skin, Vector3(side * 0.045, 0.008, -0.01), visual)
 	thumb.rotation.y = side * 0.5
 	return hand
 
@@ -330,6 +356,12 @@ func _build_hud() -> void:
 	hud_message = _hud_label(layer, 38, Control.PRESET_FULL_RECT, HORIZONTAL_ALIGNMENT_CENTER)
 	hud_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hud_message.offset_bottom = -200
+	hud_nervous = _hud_label(layer, 150, Control.PRESET_FULL_RECT, HORIZONTAL_ALIGNMENT_CENTER)
+	hud_nervous.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hud_nervous.add_theme_color_override("font_color", WARNING_RED)
+	hud_nervous.add_theme_constant_override("outline_size", 24)
+	hud_nervous.text = "NERVOUS !!!"
+	hud_nervous.visible = false
 	var help := _hud_label(layer, 18, Control.PRESET_BOTTOM_WIDE, HORIZONTAL_ALIGNMENT_CENTER)
 	help.offset_top = -40
 	help.text = "Clic gauche sur ton tas puis glisse vers le centre : jouer    |    Clic droit : taper (sur la carte du dessus… ou à côté pour feinter)    |    Échap : libérer la souris (clic pour reprendre)"
@@ -355,6 +387,8 @@ func _process(delta: float) -> void:
 	_update_human_hand(delta)
 	_update_heads(delta)
 	_update_left_hands()
+	_update_other_hands(delta)
+	_update_hand_warnings()
 
 	if _turn_player >= 0:
 		_turn_left = maxf(0.0, _turn_left - delta)
@@ -398,6 +432,35 @@ func _update_human_hand(delta: float) -> void:
 	var goal := _hand_target
 	goal.y = _height_over_deck(goal)
 	hand.global_position = hand.global_position.lerp(goal, minf(1.0, delta * 25.0))
+	server.update_hand(HUMAN, Vector2(hand.global_position.x, hand.global_position.z))
+
+
+# Les mains droites des autres joueurs suivent la position annoncée par le serveur
+# (quand elles ne sont pas en pleine animation).
+func _update_other_hands(delta: float) -> void:
+	for p in SEATS:
+		if p == HUMAN or hand_locked[p]:
+			continue
+		var hand := right_hands[p]
+		hand.global_position = hand.global_position.lerp(_bot_hand_goal[p], minf(1.0, delta * 6.0))
+
+
+# Une main qui touche le cercle pulse en rouge et tremble, d'autant plus qu'elle s'enfonce.
+func _update_hand_warnings() -> void:
+	var t := Time.get_ticks_msec() / 1000.0
+	for p in SEATS:
+		var hand := right_hands[p]
+		var level := 0.0
+		if not hand_locked[p] or hand.has_meta("nervous"):
+			var pos := Vector2(hand.global_position.x, hand.global_position.z)
+			level = clampf(Table.intrusion(pos) / Table.LINE_TOLERANCE, 0.0, 1.0)
+		if hand.has_meta("nervous"):
+			level = 1.0
+		var visual: Node3D = hand.get_node("Visual")
+		visual.position = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * WARNING_TREMBLE * level
+		var pulse := (0.5 + 0.5 * sin(t * 18.0)) * level
+		for mesh: MeshInstance3D in visual.get_children():
+			(mesh.material_override as StandardMaterial3D).albedo_color = (SKIN_COLORS[p] as Color).lerp(WARNING_RED, pulse)
 
 
 # Un même mouvement de souris déplace la main de la même distance sur la table,
@@ -685,6 +748,57 @@ func _highlight(card_node: Node3D) -> void:
 		0.0, 1.0, 0.5)
 
 
+func _on_hand_moved(player: int, pos: Vector2) -> void:
+	if player != HUMAN:
+		_bot_hand_goal[player] = Vector3(pos.x, HAND_Y, pos.y)
+
+
+# NERVOUS !!! : grosse annonce au premier nerveux, lumière rouge qui clignote sur chaque main fautive.
+func _on_player_nervous(player: int, order: int) -> void:
+	_turn_player = -1
+	var hand := right_hands[player]
+	hand.set_meta("nervous", true)
+	var light := OmniLight3D.new()
+	light.light_color = WARNING_RED
+	light.omni_range = 0.35
+	light.position = Vector3(0, 0.08, 0)
+	hand.add_child(light)
+	var blink := light.create_tween().set_loops()
+	blink.tween_property(light, "light_energy", 6.0, 0.1)
+	blink.tween_property(light, "light_energy", 0.0, 0.1)
+	_trauma = minf(TRAUMA_MAX, _trauma + 1.0)
+	if order == 1:
+		_show_nervous_banner()
+
+
+func _show_nervous_banner() -> void:
+	hud_nervous.visible = true
+	hud_nervous.modulate.a = 1.0
+	hud_nervous.pivot_offset = hud_nervous.size / 2.0
+	hud_nervous.scale = Vector2(0.2, 0.2)
+	var tw := create_tween()
+	tw.tween_property(hud_nervous, "scale", Vector2(1.25, 1.25), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(hud_nervous, "scale", Vector2.ONE, 0.12)
+	# Tremblement du texte pendant l'annonce.
+	tw.tween_method(func(t: float):
+		hud_nervous.rotation = sin(t * 40.0) * 0.06 * (1.0 - t)
+		hud_nervous.scale = Vector2.ONE * (1.0 + 0.08 * sin(t * 25.0)),
+		0.0, 1.0, 1.3)
+	tw.tween_property(hud_nervous, "modulate:a", 0.0, 0.3)
+	tw.tween_callback(func():
+		hud_nervous.visible = false
+		hud_nervous.rotation = 0.0)
+
+
+func _clear_nervous_hands() -> void:
+	for hand in right_hands:
+		if hand.has_meta("nervous"):
+			hand.remove_meta("nervous")
+			for child in hand.get_children():
+				if child is OmniLight3D:
+					child.queue_free()
+
+
 func _on_slap_missed(player: int, pos: Vector2) -> void:
 	if player == HUMAN:
 		_human_slap_answered = true
@@ -694,6 +808,10 @@ func _on_slap_missed(player: int, pos: Vector2) -> void:
 func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 	_turn_player = -1
 	_drop_held_card()
+	_clear_nervous_hands()
+	# Ta main ressort du cercle, pour ne pas être de nouveau nerveux au tour suivant.
+	var out := Table.outside_circle(Vector2(_hand_target.x, _hand_target.z))
+	_hand_target = Vector3(out.x, HAND_Y, out.y)
 	var takers: Array = shares.keys()
 	if reason == "timeout":  # pour les tapes, le verdict a déjà été annoncé
 		_show_message(_pile_message(shares, reason))
@@ -757,8 +875,9 @@ func _animate_slap(p: int, pos: Vector2, order: int, stay: bool) -> void:
 		height = center_cards.size() * CARD_T * 0.5  # à côté, mais sur le bord du tas éparpillé
 	var target := Vector3(pos.x, height, pos.y)
 	var raised := hand.global_position.lerp(target, 0.4) + Vector3(0, 0.12, 0)
-	# Le joueur humain garde sa main là où il a feinté ; un ordinateur la ramène au repos.
-	var back := Vector3(pos.x, HAND_Y, pos.y) if p == HUMAN else _rest_pos(p)
+	# Après une feinte, la main du joueur ressort juste hors du cercle ; un ordinateur la ramène au repos.
+	var outside := Table.outside_circle(pos)
+	var back := Vector3(outside.x, HAND_Y, outside.y) if p == HUMAN else _rest_pos(p)
 	var tw := _hand_tween(p)
 	tw.tween_property(hand, "global_position", raised, 0.07).set_ease(Tween.EASE_OUT)
 	tw.tween_property(hand, "global_position", target, 0.07).set_ease(Tween.EASE_IN)
@@ -802,8 +921,13 @@ func _pile_message(shares: Dictionary, reason: String) -> String:
 		var listed := ", ".join(names.slice(0, -1)) + " et " + names[-1]
 		if reason == "false_slap":
 			return "Tape par erreur ! %s se partagent %d cartes." % [listed, total]
+		if reason == "nervous":
+			return "%s ont été nerveux, ils perdent !\nIls se partagent %d cartes." % [listed, total]
 		return "%s n'ont pas tapé : ils se partagent %d cartes !" % [listed, total]
 	var p: int = takers[0]
+	if reason == "nervous":
+		return ("Tu as été nerveux, tu perds !\nTu ramasses %d cartes." % total) if p == HUMAN \
+			else ("%s a été nerveux, il perd !\nIl ramasse %d cartes." % [NAMES[p], total])
 	if reason == "false_slap":
 		return ("Tape par erreur ! Tu ramasses %d cartes." % total) if p == HUMAN \
 			else ("%s a tapé par erreur et ramasse %d cartes !" % [NAMES[p], total])

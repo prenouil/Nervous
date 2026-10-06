@@ -63,6 +63,17 @@ Deux cartes consécutives forment une paire si :
 - Si la première tape n'était pas valide, **seuls les tapeurs** (tous les fautifs) se partagent le tas. Ceux qui n'ont pas tapé ne sont pas sanctionnés.
 - Le premier fautif joue la carte suivante (choix provisoire).
 
+
+## Nervous !
+
+- Un **cercle rouge** est tracé au centre de la table (diamètre : la moitié de la table).
+- Une main droite qui **touche un peu le cercle** (moins de 2 cm) **pulse en rouge et tremble** : simple avertissement.
+- Une main qui **franchit la ligne** (plus de 2 cm) doit **taper dans les 0,5 s** (une feinte compte). Si le joueur ne tape pas à temps, **ou ramène sa main avant d'avoir tapé**, il est **nerveux** !
+- Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 2 s, et une **lumière rouge clignote** sur la main fautive.
+- Pendant les **0,5 s** qui suivent, toute autre main qui franchit la ligne est aussi déclarée nerveuse.
+- Ensuite on l'explique (« Tu as été nerveux, tu perds ! ») et **les nerveux se partagent le tas**. Le premier nerveux joue la carte suivante (choix provisoire).
+- Après une feinte, la main du joueur ressort automatiquement juste hors du cercle.
+
 ## Fin de partie
 
 - La partie s'arrête quand **un seul joueur a encore des cartes**.
@@ -85,6 +96,8 @@ Deux cartes consécutives forment une paire si :
 - Temps de réaction pour taper : **aléatoire** à chaque paire, de 0,25 à 0,8 s après l'arrivée de la carte.
 - Celui qui a joué la carte la voit mal : **malus de réaction de 0,2 à 0,5 s**.
 - **Réflexe** : quand quelqu'un tape alors que l'ordinateur ne voit pas de paire, il a **10 % de chances** de suivre, retirées **à chaque nouvelle tape** (plus il y a de tapeurs, plus il est tenté). 20 % pour celui qui a joué la carte, qui l'a mal vue.
+- **Tension** : quand les cartes se ressemblent, chaque ordinateur (sauf celui qui a joué) a 35 % de chances d'avancer la main jusqu'au cercle (avertissement visible), et 8 % de ces fois-là il franchit la ligne (nerveux s'il ne tape pas).
+- **Contagion** : quand quelqu'un est déclaré nerveux, chaque ordinateur a 20 % de chances de sursauter et d'être nerveux aussi.
 - Comportement à affiner plus tard.
 
 ## Direction artistique

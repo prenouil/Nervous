@@ -5,6 +5,7 @@ extends Node
 
 const GameRules = preload("res://scripts/game_rules.gd")
 const Cards = preload("res://scripts/cards.gd")
+const Table = preload("res://scripts/table.gd")
 
 signal game_started(counts: Array)
 signal turn_started(player: int, duration: float)
@@ -14,8 +15,10 @@ signal slap_window_closed   # la paire a été recouverte depuis trop longtemps 
 signal slap_registered(player: int, order: int, pos: Vector2)  # tape qui touche le tas
 signal slap_missed(player: int, pos: Vector2)                # tape à côté (feinte) : sans effet, la main remonte
 signal card_ejected(player: int, card: int)  # carte qui recouvrait la paire, renvoyée sous le tas de son propriétaire
-signal pile_taken(shares: Dictionary, reason: String)  # { joueur: cartes }, reason : "slap", "false_slap" ou "timeout"
+signal pile_taken(shares: Dictionary, reason: String)  # { joueur: cartes }, reason : "slap", "false_slap", "nervous" ou "timeout"
 signal slap_judged(shares: Dictionary, reason: String, highlighted: int)  # verdict annoncé avant le ramassage ; highlighted : nombre de cartes du dessus en cause
+signal hand_moved(player: int, pos: Vector2)     # position de la main droite d'un joueur, pour l'afficher chez les autres
+signal player_nervous(player: int, order: int)  # main restée trop loin dans le cercle : NERVOUS !
 signal game_over(loser: int)
 
 const TURN_TIME := 5.0        # temps pour jouer sa carte
@@ -24,14 +27,17 @@ const COVER_GRACE := 0.5      # temps pour taper encore une paire après l'atter
 const SLAP_WINDOW := 3.0      # temps pour taper une paire visible, puis temps de jugement après la première tape
 const REVEAL_TIME := 1.8      # après le verdict : les mains se retirent, les cartes en cause clignotent
 const RESOLVE_DELAY := 1.9    # pause après un ramassage, le temps de l'animation
-const HAND_RADIUS := 0.045    # rayon de la paume, pour juger si une tape touche
+const NERVOUS_GRACE := 0.5   # main qui franchit la ligne du cercle : temps pour taper
+const NERVOUS_CONTAGION := 0.5  # après un premier nerveux, temps pendant lequel d'autres peuvent l'être aussi
+const NERVOUS_SHOW := 2.0    # durée de l'annonce « NERVOUS !!! » avant le verdict
 const PILE_SPREAD_MIN := 0.03 # dispersion des cartes au centre : rayon au début...
 const PILE_SPREAD_MAX := 0.12 # ...et rayon maximal, atteint après quelques cartes
 
 # TURN : on joue les cartes. Une paire visible n'arrête pas le jeu : elle peut être recouverte.
 # SLAP : quelqu'un a tapé, sa main bloque le tas. Les autres peuvent taper aussi,
 #        puis le serveur juge si la première tape était valide.
-enum State { IDLE, TURN, SLAP, RESOLVING, OVER }
+# NERVOUS : une main est restée trop loin dans le cercle ; le jeu s'arrête, d'autres peuvent être nerveux.
+enum State { IDLE, TURN, SLAP, NERVOUS, RESOLVING, OVER }
 
 var rules := GameRules.new()
 var rng := RandomNumberGenerator.new()
@@ -51,11 +57,17 @@ var _slap_left := 0.0
 var _slap_order: Array[int] = []
 var _slap_positions: Array[Vector2] = []  # mains posées sur le tas
 var _center_layout: Array[Vector3] = []   # pour chaque carte du centre : x, z, orientation
+var _cross_start: Array[float] = []       # instant où la main a franchi la ligne du cercle (-1 : pas franchie)
+var _nervous: Array[int] = []
+var _nervous_time := 0.0
 
 
 func start_game(players := 4) -> void:
 	rng.randomize()
 	rules.setup(players, rng)
+	_cross_start.clear()
+	for p in players:
+		_cross_start.append(-1.0)
 	game_started.emit(rules.counts())
 	_start_turn(rng.randi_range(0, players - 1))
 
@@ -71,8 +83,15 @@ func _process(delta: float) -> void:
 			_slap_valid = true
 			_resolve_slap()
 			return
+		for p in _cross_start.size():
+			if _cross_start[p] >= 0.0 and _clock - _cross_start[p] > NERVOUS_GRACE:
+				_declare_nervous(p)  # ligne franchie sans taper à temps
+				return
 		if _turn_left <= 0.0:
 			_on_turn_timeout()
+	elif state == State.NERVOUS:
+		if _clock - _nervous_time >= NERVOUS_SHOW:
+			_resolve_nervous()
 	elif state == State.SLAP:
 		_slap_left -= delta
 		if _slap_left <= 0.0:
@@ -115,12 +134,14 @@ func request_play(p: int) -> void:
 func request_slap(p: int, pos: Vector2) -> void:
 	if (state != State.TURN and state != State.SLAP) or p in _slap_order:
 		return
+	_cross_start[p] = -1.0  # avoir tapé (même à côté) dispense d'être nerveux
 	if not _hits_pile(pos):
 		slap_missed.emit(p, pos)
 		return
 	if state == State.TURN:
 		# Première tape : la main bloque le tas, plus personne ne peut jouer.
 		state = State.SLAP
+		_clear_crossings()
 		_slap_valid = _pair_open
 		_slap_order.clear()
 		_slap_positions.clear()
@@ -135,6 +156,55 @@ func request_slap(p: int, pos: Vector2) -> void:
 	slap_registered.emit(p, _slap_order.size(), pos)
 	if _slap_order.size() == rules.num_players:
 		_resolve_slap()
+
+
+# Position de la main droite d'un joueur. Une main qui franchit la ligne du cercle
+# doit taper dans les NERVOUS_GRACE secondes ; si elle ressort avant ou reste trop
+# longtemps sans taper, le joueur est nerveux.
+func update_hand(p: int, pos: Vector2) -> void:
+	hand_moved.emit(p, pos)
+	var crossed := Table.intrusion(pos) > Table.LINE_TOLERANCE
+	if state == State.NERVOUS:
+		if crossed and _clock - _nervous_time <= NERVOUS_CONTAGION:
+			_declare_nervous(p)
+	elif state == State.TURN:
+		if crossed and _cross_start[p] < 0.0:
+			_cross_start[p] = _clock
+		elif not crossed and _cross_start[p] >= 0.0:
+			_declare_nervous(p)  # main ramenée sans avoir tapé
+
+
+func _declare_nervous(p: int) -> void:
+	if p in _nervous:
+		return
+	if state == State.TURN:
+		state = State.NERVOUS
+		_nervous_time = _clock
+		_pair_open = false
+		_nervous.clear()
+		_clear_crossings()
+	elif state != State.NERVOUS:
+		return
+	_nervous.append(p)
+	player_nervous.emit(p, _nervous.size())
+
+
+# Les nerveux se partagent le tas ; le premier d'entre eux rejoue.
+func _resolve_nervous() -> void:
+	state = State.RESOLVING
+	var losers: Array[int] = _nervous.duplicate()
+	_nervous.clear()
+	_center_layout.clear()
+	var shares := rules.give_center_to(losers, rng)
+	slap_judged.emit(shares, "nervous", 0)
+	_after(REVEAL_TIME, func():
+		pile_taken.emit(shares, "nervous")
+		_after(RESOLVE_DELAY, func(): _continue_with(losers[0])))
+
+
+func _clear_crossings() -> void:
+	for p in _cross_start.size():
+		_cross_start[p] = -1.0
 
 
 # Position (x, z) de la carte du dessus du centre, ou null si le centre est vide.
@@ -152,7 +222,7 @@ func _hits_pile(pos: Vector2) -> bool:
 	if n > 1 and _pair_open and _covered and _hand_touches_card(pos, _center_layout[n - 2]):
 		return true
 	for hand in _slap_positions:
-		if hand.distance_to(pos) <= HAND_RADIUS * 2.0:
+		if hand.distance_to(pos) <= Table.HAND_RADIUS * 2.0:
 			return true
 	return false
 
@@ -164,7 +234,7 @@ func _hand_touches_card(pos: Vector2, card: Vector3) -> bool:
 	var local := (pos - Vector2(card.x, card.y)).rotated(card.z)
 	var half := Vector2(Cards.CARD_W, Cards.CARD_L) / 2.0
 	var closest := local.clamp(-half, half)
-	return local.distance_to(closest) <= HAND_RADIUS
+	return local.distance_to(closest) <= Table.HAND_RADIUS
 
 
 func _close_pair() -> void:
@@ -173,6 +243,9 @@ func _close_pair() -> void:
 
 
 func _start_turn(p: int) -> void:
+	if _cross_start.size() != rules.num_players:
+		_cross_start.resize(rules.num_players)
+		_clear_crossings()
 	state = State.TURN
 	current_player = p
 	_turn_left = TURN_TIME
@@ -184,6 +257,7 @@ func _start_turn(p: int) -> void:
 # Tape par erreur : tous les tapeurs se partagent le tas, le premier fautif rejoue.
 func _resolve_slap() -> void:
 	state = State.RESOLVING
+	_clear_crossings()
 	_pair_open = false
 	var losers: Array[int] = []
 	var reason := "slap"
@@ -210,6 +284,7 @@ func _resolve_slap() -> void:
 # Temps écoulé : le joueur ramasse le tas du centre, puis on passe au suivant.
 func _on_turn_timeout() -> void:
 	state = State.RESOLVING
+	_clear_crossings()
 	_pair_open = false
 	var p := current_player
 	var losers: Array[int] = [p]

@@ -14,6 +14,7 @@ var pairs := 0
 var covered := 0
 var false_slaps := 0
 var ejections := 0
+var nervous := 0
 
 
 func _initialize() -> void:
@@ -35,10 +36,11 @@ func _initialize() -> void:
 	server.slap_window_opened.connect(func(): pairs += 1)
 	server.slap_window_closed.connect(func(): covered += 1)
 	server.card_ejected.connect(func(_p, _c): ejections += 1)
+	server.player_nervous.connect(func(_p, _o): nervous += 1)
 	server.game_over.connect(func(loser):
 		_check_cards()
-		print("OK : partie terminée en %d cartes jouées, %d ramassages, %d paires dont %d recouvertes, %d éjections, %d tapes par erreur. Perdant : joueur %d. Tas : %s"
-			% [plays, pickups, pairs, covered, ejections, false_slaps, loser, server.rules.counts()])
+		print("OK : partie terminée en %d cartes jouées, %d ramassages, %d paires dont %d recouvertes, %d éjections, %d tapes par erreur, %d nerveux. Perdant : joueur %d. Tas : %s"
+			% [plays, pickups, pairs, covered, ejections, false_slaps, nervous, loser, server.rules.counts()])
 		quit(0 if loser >= 0 else 1))
 	server.start_game.call_deferred(4)
 
