@@ -5,7 +5,7 @@ const TABLE_SIZE := 1.3
 const SEAT_RADIUS := 0.55
 const RIGHT_HAND_LOCAL := Vector2(0.19, -0.14)  # main droite au repos, dans le repère du siège
 const HAND_RADIUS := 0.045                     # rayon de la paume
-const CIRCLE_RADIUS := TABLE_SIZE / 4.0         # cercle rouge : la moitié de la table en diamètre
+const CIRCLE_RADIUS := TABLE_SIZE / 4.0 * 0.75  # cercle rouge : 3/8 de la table en diamètre
 const LINE_TOLERANCE := 0.02                    # au-delà, la main a franchi la ligne
 
 

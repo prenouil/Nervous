@@ -28,6 +28,7 @@ const SLAP_WINDOW := 3.0      # temps pour taper une paire visible, puis temps d
 const REVEAL_TIME := 1.8      # après le verdict : les mains se retirent, les cartes en cause clignotent
 const RESOLVE_DELAY := 1.9    # pause après un ramassage, le temps de l'animation
 const NERVOUS_GRACE := 0.5   # main qui franchit la ligne du cercle : temps pour taper
+const THROW_EXIT_GRACE := 1.0  # carte lâchée dans le cercle : temps pour en ressortir
 const NERVOUS_CONTAGION := 0.5  # après un premier nerveux, temps pendant lequel d'autres peuvent l'être aussi
 const NERVOUS_SHOW := 2.0    # durée de l'annonce « NERVOUS !!! » avant le verdict
 const PILE_SPREAD_MIN := 0.03 # dispersion des cartes au centre : rayon au début...
@@ -84,7 +85,8 @@ func _process(delta: float) -> void:
 			_resolve_slap()
 			return
 		for p in _cross_start.size():
-			if _cross_start[p] >= 0.0 and _clock - _cross_start[p] > NERVOUS_GRACE:
+			var grace := THROW_EXIT_GRACE if _throw_exit[p] else NERVOUS_GRACE
+			if _cross_start[p] >= 0.0 and _clock - _cross_start[p] > grace:
 				_declare_nervous(p)  # ligne franchie sans taper à temps
 				return
 		if _turn_left <= 0.0:
@@ -189,7 +191,7 @@ func grab_card(p: int) -> void:
 		_cross_start[p] = -1.0
 
 
-# Le joueur lâche sa carte : si sa main est dans le cercle, il a NERVOUS_GRACE secondes pour en sortir.
+# Le joueur lâche sa carte : si sa main est dans le cercle, il a THROW_EXIT_GRACE secondes pour en sortir.
 func release_card(p: int) -> void:
 	_ensure_players()
 	if not _holding[p]:
