@@ -108,7 +108,7 @@ func request_play(p: int) -> void:
 	# La carte atterrit de plus en plus loin du centre à mesure que le tas grossit.
 	var spread := lerpf(PILE_SPREAD_MIN, PILE_SPREAD_MAX, clampf(count / 6.0, 0.0, 1.0))
 	var pos := Vector2.from_angle(rng.randf() * TAU) * spread * sqrt(rng.randf())
-	var yaw := -p * PI / 2.0 + rng.randf_range(-0.8, 0.8)  # orientée à peu près comme le joueur qui la jette
+	var yaw := Table.seat_angle(p, rules.num_players) + rng.randf_range(-0.8, 0.8)  # orientée à peu près comme le joueur qui la jette
 	_center_layout.append(Vector3(pos.x, pos.y, yaw))
 	card_played.emit(p, card, count, pos, yaw)
 	if rules.is_pair():

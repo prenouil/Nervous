@@ -8,13 +8,16 @@ const BotPlayer = preload("res://scripts/bot_player.gd")
 const Cards = preload("res://scripts/cards.gd")
 const Table = preload("res://scripts/table.gd")
 
-const SEATS := 4
+const DEFAULT_BOTS := 3
+const MAX_PLAYERS := 6
 const HUMAN := 0
-const NAMES := ["Toi", "Léon", "Margot", "Igor"]
+const NAMES := ["Toi", "Léon", "Margot", "Igor", "Zoé", "Bruno"]
 const SKIN_COLORS := [
 	Color(0.96, 0.78, 0.62), Color(0.55, 0.38, 0.26),
-	Color(0.98, 0.82, 0.70), Color(0.80, 0.60, 0.42)]
-const HAIR_COLORS := [Color.BLACK, Color(0.15, 0.1, 0.08), Color(0.85, 0.35, 0.1), Color(0.9, 0.85, 0.6)]
+	Color(0.98, 0.82, 0.70), Color(0.80, 0.60, 0.42),
+	Color(0.70, 0.50, 0.36), Color(0.92, 0.72, 0.56)]
+const HAIR_COLORS := [Color.BLACK, Color(0.15, 0.1, 0.08), Color(0.85, 0.35, 0.1), Color(0.9, 0.85, 0.6),
+	Color(0.55, 0.1, 0.35), Color(0.4, 0.4, 0.42)]
 
 const SEAT_RADIUS := Table.SEAT_RADIUS
 const CARD_W := Cards.CARD_W
@@ -22,8 +25,6 @@ const CARD_L := Cards.CARD_L
 const CARD_T := 0.0016
 const PALM_H := 0.022
 const HAND_Y := 0.03
-const LEFT_HAND_LOCAL := Vector3(-0.19, HAND_Y, -0.14)
-const RIGHT_HAND_LOCAL := Vector3(Table.RIGHT_HAND_LOCAL.x, HAND_Y, Table.RIGHT_HAND_LOCAL.y)
 const HEAD_LOCAL := Vector3(0, 0.34, 0.15)
 
 const GRAB_RADIUS := 0.09         # distance au tas pour pouvoir saisir une carte
@@ -57,6 +58,15 @@ const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat"
 const HEARTBEAT_BPM := Vector2(70.0, 140.0)    # battement de cœur : rythme au début du penché, puis au maximum
 const HEARTBEAT_VOLUME := Vector2(-28.0, -4.0)  # et volume (dB)
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
+
+# Nombre d'ordinateurs de la prochaine partie (choisi dans le menu).
+static var bot_count := DEFAULT_BOTS
+
+# Mode « attente » : la table à 4 joueurs, dans la pénombre, sert de fond au menu.
+var demo_mode := false
+var seat_count := 4
+var _left_local := Vector3.ZERO    # mains au repos, dans le repère du siège (écart selon le nombre de joueurs)
+var _right_local := Vector3.ZERO
 
 var server: GameServer
 var camera: Camera3D
@@ -110,10 +120,14 @@ var _message_left := 0.0
 
 
 func _ready() -> void:
+	seat_count = 4 if demo_mode else bot_count + 1
+	var spread := Table.hand_spread(seat_count)
+	_left_local = Vector3(-spread, HAND_Y, Table.HAND_FORWARD)
+	_right_local = Vector3(spread, HAND_Y, Table.HAND_FORWARD)
 	font.font_names = PackedStringArray(["Segoe UI Symbol", "Segoe UI", "Arial"])
 	white_mat = _mat(Color(0.97, 0.96, 0.92))
 	back_mat = _mat(Color(0.15, 0.25, 0.65))
-	for i in SEATS:
+	for i in seat_count:
 		counts.append(0)
 		hand_locked.append(false)
 		hand_tweens.append(null)
@@ -125,9 +139,15 @@ func _ready() -> void:
 
 	_build_environment()
 	_build_table()
-	for i in SEATS:
+	for i in seat_count:
 		_build_seat(i)
 	_build_camera()
+	_hand_target = _rest_pos(HUMAN)
+	for p in seat_count:
+		_bot_hand_goal[p] = _rest_pos(p)
+	if demo_mode:
+		_dim_for_menu()
+		return
 	_build_hud()
 	_load_sounds()
 
@@ -145,17 +165,27 @@ func _ready() -> void:
 	server.game_over.connect(_on_game_over)
 	server.hand_moved.connect(_on_hand_moved)
 	server.player_nervous.connect(_on_player_nervous)
-	for i in range(1, SEATS):
+	for i in range(1, seat_count):
 		var bot := BotPlayer.new()
 		bot.name = "Bot%d" % i
 		add_child(bot)
 		bot.setup(i, server)
 
-	_hand_target = _rest_pos(HUMAN)
-	for p in SEATS:
-		_bot_hand_goal[p] = _rest_pos(p)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	server.start_game.call_deferred(SEATS)
+	server.start_game.call_deferred(seat_count)
+
+
+# Pénombre pour le fond du menu : lampe et ambiance baissées, pas de lumière de tour.
+func _dim_for_menu() -> void:
+	turn_light.visible = false
+	for child in get_children():
+		if child is OmniLight3D:
+			child.light_energy = 0.45
+		elif child is WorldEnvironment:
+			child.environment.ambient_light_energy = 0.12
+	for p in seat_count:
+		counts[p] = 13
+		_update_stack(p)
 
 
 # --- Construction de la scène -------------------------------------------------
@@ -241,19 +271,19 @@ func _build_table() -> void:
 func _build_seat(i: int) -> void:
 	var root := Node3D.new()
 	root.name = "Seat%d" % i
-	var angle := -i * PI / 2.0  # sens des aiguilles d'une montre vu du dessus
+	var angle := Table.seat_angle(i, seat_count)  # sens des aiguilles d'une montre vu du dessus
 	root.position = Vector3(sin(angle), 0, cos(angle)) * SEAT_RADIUS
 	root.rotation.y = angle     # -Z local pointe vers le centre de la table
 	add_child(root)
 	seat_roots.append(root)
 
 	var left := _make_hand(SKIN_COLORS[i], true)
-	left.position = LEFT_HAND_LOCAL
+	left.position = _left_local
 	root.add_child(left)
 	left_hands.append(left)
 
 	var right := _make_hand(SKIN_COLORS[i], false)
-	right.position = RIGHT_HAND_LOCAL
+	right.position = _right_local
 	root.add_child(right)
 	right_hands.append(right)
 
@@ -354,7 +384,7 @@ func _set_card_face(card_node: Node3D, card: int) -> void:
 
 func _build_camera() -> void:
 	camera = Camera3D.new()
-	camera.fov = 65.0
+	camera.fov = 65.0 + maxi(0, seat_count - 4) * 4.0  # plus large à 5 ou 6 joueurs, pour garder les visages à l'écran
 	add_child(camera)
 	camera.look_at_from_position(Vector3(0, 0.6, SEAT_RADIUS + 0.35), Vector3(0, 0, -0.02))
 	_camera_pos = camera.position
@@ -398,6 +428,12 @@ func _hud_label(layer: CanvasLayer, size: int, preset: Control.LayoutPreset, ali
 # --- Boucle --------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	if demo_mode:
+		_update_camera(delta)
+		_update_heads(delta)
+		_update_left_hands()
+		_update_other_hands(delta)
+		return
 	_update_camera(delta)
 	_update_turn_light(delta)
 	_update_human_hand(delta)
@@ -458,7 +494,7 @@ func _update_human_hand(delta: float) -> void:
 # Les mains droites des autres joueurs suivent la position annoncée par le serveur
 # (quand elles ne sont pas en pleine animation).
 func _update_other_hands(delta: float) -> void:
-	for p in SEATS:
+	for p in seat_count:
 		if p == HUMAN or hand_locked[p]:
 			continue
 		var hand := right_hands[p]
@@ -472,9 +508,9 @@ func _update_hand_warnings() -> void:
 	var cards_over := center_cards.size() - TREMOR_FROM_CARD + 1
 	var tremor_goal := clampf(cards_over / (TENSION_CARDS - TREMOR_FROM_CARD + 1.0), 0.0, 1.0) if cards_over > 0 else 0.0
 	_tremor = lerpf(_tremor, tremor_goal, 0.1)
-	for p in SEATS:
+	for p in seat_count:
 		(left_hands[p].get_node("Visual") as Node3D).position = _tremor_offset(p * 2, t) * TREMOR_MAX * _tremor
-	for p in SEATS:
+	for p in seat_count:
 		var hand := right_hands[p]
 		var level := 0.0
 		if not hand_locked[p] or hand.has_meta("nervous"):
@@ -516,17 +552,17 @@ func _height_over_deck(pos: Vector3) -> float:
 # La main gauche se balance doucement dans un petit cercle, comme un balancier.
 func _update_left_hands() -> void:
 	var t := Time.get_ticks_msec() / 1000.0
-	for p in SEATS:
+	for p in seat_count:
 		var phase := _left_phase[p]
 		var circle := Vector3(cos(t * phase.x + phase.z), 0, sin(t * phase.y + phase.z)) * LEFT_SWAY_RADIUS
 		var bob := Vector3(0, sin(t * phase.x * 2.0 + phase.z) * 0.003, 0)
-		left_hands[p].position = LEFT_HAND_LOCAL + circle + bob
+		left_hands[p].position = _left_local + circle + bob
 		left_hands[p].rotation = Vector3(circle.z * 5.0, 0, -circle.x * 5.0)  # s'incline dans le sens du mouvement
 
 
 # Les visages regardent surtout le joueur actif, parfois le tas, parfois n'importe où.
 func _update_heads(delta: float) -> void:
-	for p in SEATS:
+	for p in seat_count:
 		var head := heads[p]
 		if head == null:
 			continue
@@ -553,7 +589,7 @@ func _pick_head_target(p: int) -> Vector3:
 
 func _refresh_hud() -> void:
 	var lines := []
-	for p in SEATS:
+	for p in seat_count:
 		lines.append("%s : %d carte%s" % [NAMES[p], counts[p], "s" if counts[p] > 1 else ""])
 	hud_counts.text = "\n".join(lines)
 	if _turn_player == HUMAN:
@@ -572,6 +608,8 @@ func _show_message(text: String, duration := 2.5) -> void:
 # --- Contrôles du joueur ---------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if demo_mode:
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_move_hand_target(event.relative)
 	elif event is InputEventMouseButton and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -586,7 +624,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			_try_slap()
 	elif event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_R and _game_over:
+		if event.keycode == KEY_M and _game_over:
+			get_tree().change_scene_to_file("res://scenes/menu.tscn")
+		elif event.keycode == KEY_R and _game_over:
 			get_tree().reload_current_scene()
 		elif event.keycode == KEY_ESCAPE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -639,7 +679,7 @@ func _try_slap() -> void:
 # --- Réactions aux annonces du serveur ---------------------------------------------
 
 func _on_game_started(start_counts: Array) -> void:
-	for p in SEATS:
+	for p in seat_count:
 		counts[p] = start_counts[p]
 		_update_stack(p)
 
@@ -929,7 +969,7 @@ func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 			_update_stack(p))
 
 	# Les mains posées sur le tas reviennent.
-	for p in SEATS:
+	for p in seat_count:
 		if hand_locked[p]:
 			var ht := _hand_tween(p)
 			ht.tween_interval(0.3)
@@ -943,9 +983,9 @@ func _on_game_over(loser: int) -> void:
 	_stop_effects()
 	_play_end_music(loser != HUMAN)
 	if loser == HUMAN:
-		_show_message("Tu as perdu !\nAppuie sur R pour rejouer", 1e9)
+		_show_message("Tu as perdu !\nR : rejouer     M : menu", 1e9)
 	else:
-		_show_message("%s a perdu, tu gagnes !\nAppuie sur R pour rejouer" % NAMES[loser], 1e9)
+		_show_message("%s a perdu, tu gagnes !\nR : rejouer     M : menu" % NAMES[loser], 1e9)
 	if loser >= 0:
 		_light_goal = seat_roots[loser].global_position * 0.55 + Vector3(0, 1.3, 0)
 		_light_aim_goal = seat_roots[loser].to_global(Vector3(0, 0, -0.1))
@@ -1063,7 +1103,7 @@ func _deck_top(p: int) -> Vector3:
 
 
 func _rest_pos(p: int) -> Vector3:
-	return seat_roots[p].to_global(RIGHT_HAND_LOCAL)
+	return seat_roots[p].to_global(_right_local)
 
 
 # Vibration fluide (somme de sinus) plutôt qu'un bruit aléatoire à chaque image ;

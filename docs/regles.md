@@ -6,13 +6,13 @@ Document de référence du jeu. Les points marqués **[À DÉFINIR]** sont encor
 
 Jeu de cartes de table en 3D, vu à la première personne. Jeu de rapidité inspiré de la bataille « où l'on tape sur le tas », avec un jeu classique de 52 cartes.
 
-- 4 joueurs autour d'une table.
-- Pour l'instant : 1 joueur humain contre 3 ordinateurs.
+- **2 à 6 joueurs** autour d'une table (choisi dans le menu).
+- Pour l'instant : 1 joueur humain contre 1 à 5 ordinateurs.
 - À terme : **multijoueur en ligne**.
 
 ## Mise en place
 
-- Les 52 cartes sont mélangées et distribuées équitablement : avec 4 joueurs, chacun reçoit un tas de 13 cartes.
+- Les 52 cartes sont mélangées et distribuées en **tas égaux** (13 chacun à 4 joueurs). S'il reste des cartes (à 3, 5 ou 6 joueurs), elles sont mises de côté.
 - Chaque joueur tient son tas **dans la main gauche, face cachée**.
 
 ## Déroulement d'un tour
@@ -127,3 +127,10 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 | Ramassage | petite sirène douce, puis « flushhh » et « flop » pour les cartes qui volent vers les tas |
 | Le tas grossit | battement de cœur, de plus en plus fort et rapide (70 à 140 par minute) à mesure que tu te penches |
 | Fin de partie | tous les effets s'arrêtent ; **défaite** : courte mélodie triste ; **victoire** : fanfare, applaudissements et cris de joie |
+
+## Menu
+
+- Titre : **« Don't Be NERVOUS !!! »**, sur la table à 4 joueurs qui attend dans la pénombre.
+- **Jouer contre ◀ 3 ▶ ordis — GO** : de 1 à 5 ordinateurs (2 à 6 joueurs en tout).
+- **Jouer à plusieurs** (grisé, à venir), **Options** (grisé, à venir), **Quitter**.
+- En fin de partie : **R** pour rejouer, **M** pour revenir au menu.

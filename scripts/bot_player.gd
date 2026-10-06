@@ -82,7 +82,7 @@ func _creep(cross: bool) -> void:
 		server.update_hand(seat, _toward_center(depth))
 		_after(rng.randf_range(0.6, 1.2), func():
 			if token == _hand_token:
-				server.update_hand(seat, Table.right_hand_rest(seat))))
+				server.update_hand(seat, Table.right_hand_rest(seat, server.rules.num_players))))
 
 
 # Quelqu'un vient d'être nerveux : sursaut, la main part dans le cercle.
@@ -98,7 +98,7 @@ func _on_player_nervous(player: int, order: int) -> void:
 
 # Position sur le chemin repos → centre où la paume empiète de depth sur le cercle.
 func _toward_center(depth: float) -> Vector2:
-	var rest := Table.right_hand_rest(seat)
+	var rest := Table.right_hand_rest(seat, server.rules.num_players)
 	return rest.normalized() * (Table.CIRCLE_RADIUS + Table.HAND_RADIUS - depth)
 
 
@@ -141,7 +141,7 @@ func _on_pile_taken(_shares: Dictionary, _reason: String) -> void:
 	_center.clear()
 	_cancel_slap()
 	_hand_token += 1
-	server.update_hand(seat, Table.right_hand_rest(seat))
+	server.update_hand(seat, Table.right_hand_rest(seat, server.rules.num_players))
 
 
 func _cancel_slap() -> void:

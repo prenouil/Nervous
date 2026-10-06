@@ -21,7 +21,8 @@ func _initialize() -> void:
 	Engine.time_scale = float(OS.get_environment("SIM_SPEED")) if OS.has_environment("SIM_SPEED") else 20.0
 	server = GameServer.new()
 	root.add_child(server)
-	for i in 4:
+	var players := int(OS.get_environment("SIM_PLAYERS")) if OS.has_environment("SIM_PLAYERS") else 4
+	for i in players:
 		var bot := BotPlayer.new()
 		root.add_child(bot)
 		bot.setup(i, server)
@@ -42,12 +43,12 @@ func _initialize() -> void:
 		print("OK : partie terminée en %d cartes jouées, %d ramassages, %d paires dont %d recouvertes, %d éjections, %d tapes par erreur, %d nerveux. Perdant : joueur %d. Tas : %s"
 			% [plays, pickups, pairs, covered, ejections, false_slaps, nervous, loser, server.rules.counts()])
 		quit(0 if loser >= 0 else 1))
-	server.start_game.call_deferred(4)
+	server.start_game.call_deferred(players)
 
 
 func _check_cards() -> void:
-	if server.rules.total_cards() != 52:
-		push_error("Cartes perdues : %d au lieu de 52" % server.rules.total_cards())
+	if server.rules.total_cards() != server.rules.cards_in_play:
+		push_error("Cartes perdues : %d au lieu de %d" % [server.rules.total_cards(), server.rules.cards_in_play])
 		quit(1)
 
 

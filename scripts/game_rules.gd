@@ -6,6 +6,7 @@ const Cards = preload("res://scripts/cards.gd")
 var num_players := 4
 var piles: Array = []          # piles[p] : Array[int], index 0 = carte du dessus
 var center: Array[int] = []    # dernier élément = carte visible
+var cards_in_play := 52       # cartes distribuées (le reste est mis de côté)
 
 
 func setup(players: int, rng: RandomNumberGenerator) -> void:
@@ -18,7 +19,11 @@ func setup(players: int, rng: RandomNumberGenerator) -> void:
 	for p in players:
 		var pile: Array[int] = []
 		piles.append(pile)
-	for i in deck.size():
+	# Tas égaux : s'il y a un reste (52 n'est pas divisible par 5 ou 6), ces cartes sont mises de côté.
+	@warning_ignore("integer_division")
+	var per_player := deck.size() / players
+	cards_in_play = per_player * players
+	for i in cards_in_play:
 		piles[i % players].append(deck[i])
 	center.clear()
 

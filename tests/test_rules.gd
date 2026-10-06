@@ -13,6 +13,9 @@ func _initialize() -> void:
 	var rules := GameRules.new()
 	rules.setup(4, rng)
 	_expect(rules.counts() == [13, 13, 13, 13], "distribution 13 cartes chacun")
+	var rules5 := GameRules.new()
+	rules5.setup(5, rng)
+	_expect(rules5.counts() == [10, 10, 10, 10, 10] and rules5.cards_in_play == 50, "à 5 joueurs : tas égaux de 10, 2 cartes de côté")
 
 	# Partage du tas entre deux joueurs qui n'ont pas tapé.
 	for i in 5:
