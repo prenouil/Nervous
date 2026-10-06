@@ -30,3 +30,8 @@ static func is_face(card: int) -> bool:
 # Deux cartes qui se suivent forment une paire : même valeur, ou deux têtes.
 static func forms_pair(a: int, b: int) -> bool:
 	return rank(a) == rank(b) or (is_face(a) and is_face(b))
+
+
+# Dimensions d'une carte sur la table (mètres), utilisées pour l'affichage et pour juger les tapes.
+const CARD_W := 0.11
+const CARD_L := 0.155

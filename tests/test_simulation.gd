@@ -24,7 +24,7 @@ func _initialize() -> void:
 		var bot := BotPlayer.new()
 		root.add_child(bot)
 		bot.setup(i, server)
-	server.card_played.connect(func(_p, _c, _n):
+	server.card_played.connect(func(_p, _c, _n, _pos, _yaw):
 		plays += 1
 		_check_cards())
 	server.pile_taken.connect(func(shares, reason):

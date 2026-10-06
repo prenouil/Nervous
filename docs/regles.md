@@ -35,7 +35,10 @@ Deux cartes consécutives forment une paire si :
 
 ## Taper sur le tas
 
-- Geste du joueur humain : placer la main sur le tas du milieu et faire un **clic droit**. Le bras s'avance et la main s'abat violemment sur le tas.
+- Geste du joueur humain : **clic droit**. La main s'abat violemment **là où elle se trouve**, n'importe où sur la table.
+- Une tape **compte** seulement si elle **touche la carte du dessus** (pendant le délai de grâce : la carte du dessus de la paire ou celle qui la recouvre) **ou une main déjà posée** sur le tas.
+- Une tape **à côté** est une **feinte** : sans effet ni pénalité, la main remonte et le joueur peut retaper. Elle sert à **bluffer** : les autres peuvent la prendre pour une vraie tape et taper par erreur.
+- Les ordinateurs visent la carte du dessus (avec une petite imprécision) et ne feintent jamais, mais une feinte peut déclencher leur réflexe de suivre.
 - **Dès qu'un joueur tape, sa main bloque le tas** : plus personne ne joue. Les autres ont **3 secondes** pour taper eux aussi. Ensuite on juge si la première tape était valide.
 - Les mains s'empilent dans l'ordre d'arrivée. **L'ordre est essentiel.**
 - Les cartes ramassées sont toujours **mélangées puis placées sous le tas** de ceux qui ramassent, même s'ils n'avaient plus de cartes. Quand plusieurs joueurs se partagent le tas, les cartes sont distribuées une à une.

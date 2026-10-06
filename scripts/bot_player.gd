@@ -13,6 +13,7 @@ const OWN_CARD_MALUS := Vector2(0.2, 0.5)   # celui qui a joué la carte la voit
 const MISTAKE_CHANCE := 0.1                 # chance (par ordinateur) de taper par erreur quand les cartes se ressemblent
 const FOLLOW_CHANCE := 0.1                  # chance de suivre par réflexe une tape par erreur, retirée à chaque tape
 const FOLLOW_CHANCE_OWN_CARD := 0.2         # idem pour celui qui a joué la carte (il l'a mal vue)
+const AIM_ERROR := 0.02                     # imprécision (mètres) quand ils visent la carte du dessus
 
 var seat := 0
 var server: GameServer
@@ -36,6 +37,7 @@ func setup(p_seat: int, p_server: GameServer) -> void:
 	server.slap_window_opened.connect(_on_slap_window_opened)
 	server.slap_window_closed.connect(_cancel_slap)
 	server.slap_registered.connect(_on_slap_registered)
+	server.slap_missed.connect(func(player, _pos): _on_slap_registered(player, 0, Vector2.ZERO))
 
 
 func _on_turn_started(player: int, _duration: float) -> void:
@@ -51,7 +53,7 @@ func _on_turn_started(player: int, _duration: float) -> void:
 			server.request_play(seat))
 
 
-func _on_card_played(player: int, card: int, _center_count: int) -> void:
+func _on_card_played(player: int, card: int, _center_count: int, _pos: Vector2, _yaw: float) -> void:
 	_center.append(card)
 	_last_player = player
 	# Les cartes se ressemblent : parfois on tape par erreur (sauf celui qui vient de jouer).
@@ -84,9 +86,9 @@ func _on_slap_window_opened() -> void:
 	_schedule_slap(GameServer.CARD_TRAVEL + _reaction_time())
 
 
-# Quelqu'un tape alors qu'on ne voit pas de paire : chaque nouvelle tape peut
+# Quelqu'un tape (ou feinte à côté) alors qu'on ne voit pas de paire : chaque nouvelle tape peut
 # entraîner un réflexe (plus il y a de tapeurs, plus on est tenté).
-func _on_slap_registered(player: int, _order: int) -> void:
+func _on_slap_registered(player: int, _order: int, _pos: Vector2) -> void:
 	if player == seat or _pair_visible or _slap_scheduled:
 		return
 	var chance := FOLLOW_CHANCE_OWN_CARD if _last_player == seat else FOLLOW_CHANCE
@@ -111,7 +113,14 @@ func _schedule_slap(delay: float) -> void:
 	var token := _slap_token
 	_after(delay, func():
 		if token == _slap_token:
-			server.request_slap(seat))
+			server.request_slap(seat, _aim()))
+
+
+# Vise la carte du dessus, avec une petite imprécision.
+func _aim() -> Vector2:
+	var top = server.top_card_position()
+	var target: Vector2 = top if top != null else Vector2.ZERO
+	return target + Vector2.from_angle(rng.randf() * TAU) * rng.randf() * AIM_ERROR
 
 
 func _after(seconds: float, callback: Callable) -> void:

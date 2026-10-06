@@ -16,8 +16,8 @@ const SKIN_COLORS := [
 const HAIR_COLORS := [Color.BLACK, Color(0.15, 0.1, 0.08), Color(0.85, 0.35, 0.1), Color(0.9, 0.85, 0.6)]
 
 const SEAT_RADIUS := 0.55
-const CARD_W := 0.11
-const CARD_L := 0.155
+const CARD_W := Cards.CARD_W
+const CARD_L := Cards.CARD_L
 const CARD_T := 0.0016
 const PALM_H := 0.022
 const HAND_Y := 0.03
@@ -26,13 +26,10 @@ const RIGHT_HAND_LOCAL := Vector3(0.19, HAND_Y, -0.14)
 const HEAD_LOCAL := Vector3(0, 0.34, 0.15)
 
 const GRAB_RADIUS := 0.09         # distance au tas pour pouvoir saisir une carte
-const SLAP_RADIUS := 0.2          # distance au centre pour pouvoir taper
 const PLAY_DRAG_DISTANCE := 0.07  # mouvement minimal vers le centre pour jeter la carte
 const CAMERA_SWAY := Vector2(0.22, 0.13)  # amplitude (radians) du regard qui suit la main
 const HAND_SPEED := 0.0011        # déplacement de la main (mètres) par pixel de souris
 const SWAY_HAND_RANGE := 0.6     # écart de la main (mètres) qui donne le regard maximal
-const PILE_SPREAD_MIN := 0.03     # dispersion des cartes au centre : rayon au début...
-const PILE_SPREAD_MAX := 0.12     # ...et rayon maximal, atteint après quelques cartes
 const SHAKE_OFFSET := 0.06        # tremblement de la caméra (mètres) pour une intensité de 1
 const SHAKE_ANGLE := 0.12         # et en rotation (radians)
 const TRAUMA_DECAY := 1.1         # vitesse de retour au calme après les tapes
@@ -77,7 +74,7 @@ var _light_aim_goal := Vector3.ZERO
 var _held_card: Node3D = null
 var _grab_point := Vector3.ZERO
 var _hand_target := Vector3.ZERO
-var _human_slapped := false
+var _human_slap_answered := false  # le serveur a répondu à la tape du joueur (touchée ou feinte)
 var _turn_player := -1
 var _turn_left := 0.0
 var _game_over := false
@@ -114,6 +111,7 @@ func _ready() -> void:
 	server.turn_started.connect(_on_turn_started)
 	server.card_played.connect(_on_card_played)
 	server.slap_registered.connect(_on_slap_registered)
+	server.slap_missed.connect(_on_slap_missed)
 	server.card_ejected.connect(_on_card_ejected)
 	server.pile_taken.connect(_on_pile_taken)
 	server.game_over.connect(_on_game_over)
@@ -327,7 +325,7 @@ func _build_hud() -> void:
 	hud_message.offset_bottom = -200
 	var help := _hud_label(layer, 18, Control.PRESET_BOTTOM_WIDE, HORIZONTAL_ALIGNMENT_CENTER)
 	help.offset_top = -40
-	help.text = "Clic gauche sur ton tas puis glisse vers le centre : jouer    |    Clic droit sur le tas du centre : taper    |    Échap : libérer la souris (clic pour reprendre)"
+	help.text = "Clic gauche sur ton tas puis glisse vers le centre : jouer    |    Clic droit : taper (sur la carte du dessus… ou à côté pour feinter)    |    Échap : libérer la souris (clic pour reprendre)"
 
 
 func _hud_label(layer: CanvasLayer, size: int, preset: Control.LayoutPreset, align: HorizontalAlignment) -> Label:
@@ -500,14 +498,14 @@ func _drop_held_card() -> void:
 func _try_slap() -> void:
 	if hand_locked[HUMAN]:
 		return
-	if Vector2(_hand_target.x, _hand_target.z).length() > SLAP_RADIUS:
-		return
 	_drop_held_card()
-	_human_slapped = false
-	server.request_slap(HUMAN)
-	if not _human_slapped:
-		# Tape refusée par le serveur (pas de paire) : la main tape puis revient.
-		_animate_slap(HUMAN, 1, false)
+	# On tape là où est la main : à côté du tas, c'est une feinte.
+	var pos := Vector2(_hand_target.x, _hand_target.z)
+	_human_slap_answered = false
+	server.request_slap(HUMAN, pos)
+	if not _human_slap_answered:
+		# Le serveur n'accepte pas de tape en ce moment (ramassage en cours) : simple geste.
+		_animate_slap(HUMAN, pos, 0, false)
 
 
 # --- Réactions aux annonces du serveur ---------------------------------------------
@@ -530,7 +528,7 @@ func _on_turn_started(player: int, duration: float) -> void:
 	_light_aim_goal = seat_roots[player].to_global(Vector3(0, 0, -0.1))
 
 
-func _on_card_played(player: int, card: int, center_count: int) -> void:
+func _on_card_played(player: int, card: int, center_count: int, landing: Vector2, end_yaw: float) -> void:
 	_turn_player = -1
 	counts[player] -= 1
 	_update_stack(player)
@@ -548,12 +546,9 @@ func _on_card_played(player: int, card: int, center_count: int) -> void:
 	_set_card_face(node, card)
 	center_cards.append(node)
 
-	# La carte atterrit de plus en plus loin du centre à mesure que le tas grossit.
-	var spread := lerpf(PILE_SPREAD_MIN, PILE_SPREAD_MAX, clampf(center_count / 6.0, 0.0, 1.0))
-	var landing := Vector2.from_angle(randf() * TAU) * spread * sqrt(randf())
+	# Le serveur a choisi où la carte atterrit (il en a besoin pour juger les tapes).
 	var start := node.global_position
 	var end := Vector3(landing.x, center_count * CARD_T + 0.001, landing.y)
-	var end_yaw := seat_yaw + randf_range(-0.8, 0.8)
 	# Retournement vers l'avant : le bord éloigné se lève, la face se montre aux adversaires.
 	var flight := node.create_tween()
 	node.set_meta("flight", flight)
@@ -595,10 +590,16 @@ func _on_card_ejected(player: int, _card: int) -> void:
 		_update_stack(player))
 
 
-func _on_slap_registered(player: int, order: int) -> void:
+func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
 	if player == HUMAN:
-		_human_slapped = true
-	_animate_slap(player, order, true)
+		_human_slap_answered = true
+	_animate_slap(player, pos, order, true)
+
+
+func _on_slap_missed(player: int, pos: Vector2) -> void:
+	if player == HUMAN:
+		_human_slap_answered = true
+	_animate_slap(player, pos, 0, false)
 
 
 func _on_pile_taken(shares: Dictionary, reason: String) -> void:
@@ -655,20 +656,27 @@ func _hand_tween(p: int) -> Tween:
 	return tw
 
 
-func _animate_slap(p: int, order: int, stay: bool) -> void:
+# Tape à la position pos (x, z). order > 0 : la main touche le tas et s'empile sur les
+# précédentes ; order = 0 : feinte à côté, la main frappe la table puis remonte.
+func _animate_slap(p: int, pos: Vector2, order: int, stay: bool) -> void:
 	var hand := right_hands[p]
-	var toward_seat := (seat_roots[p].global_position * Vector3(1, 0, 1)).normalized()
-	var pile_height := center_cards.size() * CARD_T
-	var target := toward_seat * 0.035 + Vector3(0, pile_height + 0.002 + (order - 1) * 0.026, 0)
+	var height := 0.001
+	if order > 0:
+		height = center_cards.size() * CARD_T + 0.002 + (order - 1) * 0.026
+	elif pos.length() < 0.2:
+		height = center_cards.size() * CARD_T * 0.5  # à côté, mais sur le bord du tas éparpillé
+	var target := Vector3(pos.x, height, pos.y)
 	var raised := hand.global_position.lerp(target, 0.4) + Vector3(0, 0.12, 0)
+	# Le joueur humain garde sa main là où il a feinté ; un ordinateur la ramène au repos.
+	var back := Vector3(pos.x, HAND_Y, pos.y) if p == HUMAN else _rest_pos(p)
 	var tw := _hand_tween(p)
 	tw.tween_property(hand, "global_position", raised, 0.07).set_ease(Tween.EASE_OUT)
 	tw.tween_property(hand, "global_position", target, 0.07).set_ease(Tween.EASE_IN)
 	# Chaque tape ajoute du tremblement : des tapes simultanées s'additionnent.
 	tw.tween_callback(func(): _trauma = minf(TRAUMA_MAX, _trauma + (TRAUMA_HUMAN_SLAP if p == HUMAN else TRAUMA_SLAP)))
 	if not stay:
-		tw.tween_interval(0.25)
-		tw.tween_property(hand, "global_position", _rest_pos(p), 0.2)
+		tw.tween_interval(0.15)
+		tw.tween_property(hand, "global_position", back, 0.12)
 		tw.tween_callback(func(): hand_locked[p] = false)
 
 
