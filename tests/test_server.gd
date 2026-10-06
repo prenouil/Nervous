@@ -112,6 +112,41 @@ func _run() -> void:
 	server.update_hand(1, outside)
 	_expect(nervous == [1], "main ramenée sans taper : nerveux")
 
+	# 9. Jeter sa carte : franchir la ligne est permis, puis 0,5 s pour ressortir.
+	_new_server([[1, 3, 5], [14, 3], [8, 9], [10, 11]])
+	nervous = []
+	server.player_nervous.connect(func(p, _o): nervous.append(p))
+	server.grab_card(0)
+	server.update_hand(0, inside)
+	await _wait(GameServer.NERVOUS_GRACE + 0.2)
+	_expect(nervous.is_empty(), "main dans le cercle en tenant sa carte : permis %s, état %s" % [nervous, server.state])
+	server.request_play(0)
+	server.release_card(0)
+	await _wait(GameServer.NERVOUS_GRACE * 0.5)
+	server.update_hand(0, outside)
+	await _wait(GameServer.NERVOUS_GRACE)
+	_expect(nervous.is_empty(), "carte jetée puis main ressortie à temps : pas nerveux")
+
+	# 10. Carte jetée mais main restée dans le cercle : nerveux.
+	_new_server([[1, 3, 5], [14, 3], [8, 9], [10, 11]])
+	nervous = []
+	server.player_nervous.connect(func(p, _o): nervous.append(p))
+	server.grab_card(0)
+	server.update_hand(0, inside)
+	server.request_play(0)
+	server.release_card(0)
+	await _wait(GameServer.NERVOUS_GRACE + 0.2)
+	_expect(nervous == [0], "carte jetée, main restée dans le cercle : nerveux")
+
+	# 11. Saisir une carte hors de son tour ne protège pas.
+	_new_server([[1, 3, 5], [14, 3], [8, 9], [10, 11]])
+	nervous = []
+	server.player_nervous.connect(func(p, _o): nervous.append(p))
+	server.grab_card(2)
+	server.update_hand(2, inside)
+	await _wait(GameServer.NERVOUS_GRACE + 0.2)
+	_expect(nervous == [2], "hors de son tour, tenir une carte ne protège pas")
+
 	print("OK" if failures == 0 else "%d ÉCHEC(S)" % failures)
 	quit(failures)
 

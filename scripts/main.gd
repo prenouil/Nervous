@@ -576,6 +576,7 @@ func _try_grab() -> void:
 	_held_card.position = Vector3(0, 0.03, -0.02)
 	_held_card.rotation = Vector3(PI, 0, 0)  # face cachée
 	_grab_point = _hand_target
+	server.grab_card(HUMAN)  # en jetant sa carte, on peut franchir la ligne du cercle
 
 
 func _try_release() -> void:
@@ -584,6 +585,7 @@ func _try_release() -> void:
 	var center := Vector3(0, HAND_Y, 0)
 	if _hand_target.distance_to(center) < _grab_point.distance_to(center) - PLAY_DRAG_DISTANCE:
 		server.request_play(HUMAN)  # si accepté, _on_card_played récupère la carte tenue
+	server.release_card(HUMAN)  # main lâchée : 0,5 s pour ressortir du cercle
 	_drop_held_card()
 
 
@@ -591,6 +593,7 @@ func _drop_held_card() -> void:
 	if _held_card != null:
 		_held_card.queue_free()
 		_held_card = null
+		server.release_card(HUMAN)
 
 
 func _try_slap() -> void:

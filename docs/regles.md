@@ -69,6 +69,7 @@ Deux cartes consécutives forment une paire si :
 - Un **cercle rouge** est tracé au centre de la table (diamètre : la moitié de la table).
 - Une main droite qui **touche un peu le cercle** (moins de 2 cm) **pulse en rouge et tremble** : simple avertissement.
 - Une main qui **franchit la ligne** (plus de 2 cm) doit **taper dans les 0,5 s** (une feinte compte). Si le joueur ne tape pas à temps, **ou ramène sa main avant d'avoir tapé**, il est **nerveux** !
+- **Exception : jeter sa carte.** Pendant son tour, un joueur qui tient sa carte peut franchir la ligne impunément. Une fois la carte lâchée, il doit **ressortir du cercle dans les 0,5 s**, sinon il est nerveux.
 - Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 2 s, et une **lumière rouge clignote** sur la main fautive.
 - Pendant les **0,5 s** qui suivent, toute autre main qui franchit la ligne est aussi déclarée nerveuse.
 - Ensuite on l'explique (« Tu as été nerveux, tu perds ! ») et **les nerveux se partagent le tas**. Le premier nerveux joue la carte suivante (choix provisoire).
