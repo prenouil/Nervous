@@ -21,7 +21,7 @@ func _run() -> void:
 	_play_from(0)                     # centre : 2 (rang 1)
 	server.request_slap(2, _top())
 	server.request_slap(3, _top())
-	await _wait(GameServer.SLAP_WINDOW + 0.2)
+	await _wait(GameServer.SLAP_WINDOW + GameServer.REVEAL_TIME + 0.2)
 	_expect(last_take.get("reason") == "false_slap", "tape par erreur détectée")
 	_expect(last_take.get("shares", {}).keys() == [2, 3], "seuls les tapeurs se partagent : %s" % [last_take])
 
@@ -31,7 +31,7 @@ func _run() -> void:
 	server.request_play(1)            # paire
 	server.request_slap(0, _top())
 	server.request_slap(1, _top())
-	await _wait(GameServer.SLAP_WINDOW + 0.2)
+	await _wait(GameServer.SLAP_WINDOW + GameServer.REVEAL_TIME + 0.2)
 	_expect(last_take.get("reason") == "slap", "tape valide")
 	_expect(last_take.get("shares", {}).keys() == [2, 3], "non-tapeurs perdants : %s" % [last_take])
 
@@ -53,7 +53,7 @@ func _run() -> void:
 	await _wait(GameServer.CARD_TRAVEL + GameServer.COVER_GRACE + 0.2)
 	ejected.clear()
 	server.request_slap(3, _top())
-	await _wait(GameServer.SLAP_WINDOW + 0.2)
+	await _wait(GameServer.SLAP_WINDOW + GameServer.REVEAL_TIME + 0.2)
 	_expect(ejected.is_empty() and last_take.get("reason") == "false_slap", "tape trop tardive = erreur : %s" % [last_take])
 
 	# 5. Feinte : taper à côté ne compte pas, la tape suivante sur la carte compte.

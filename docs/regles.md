@@ -19,7 +19,7 @@ Jeu de cartes de table en 3D, vu à la première personne. Jeu de rapidité insp
 
 - Les joueurs jouent **chacun leur tour**.
 - Une **lumière qui se déplace au-dessus des joueurs** indique à qui c'est le tour.
-- Le joueur actif retourne la carte du dessus de son tas, avec la main droite, et la jette au centre de la table. Elle atterrit **face visible**, par-dessus les cartes déjà posées.
+- Le joueur actif retourne la carte du dessus de son tas, avec la main droite, et la jette au centre de la table en la retournant vers lui : **l'adversaire d'en face voit la face en premier**. Elle atterrit **face visible**, par-dessus les cartes déjà posées.
 - Geste du joueur humain : pointer son tas avec la souris, **maintenir le clic gauche**, faire un petit mouvement vers le centre, **relâcher**.
 - **Timer : le joueur a 5 secondes pour jouer sa carte.** S'il ne joue pas à temps, **il ramasse le tas du centre**, puis c'est au joueur suivant (choix provisoire).
 - Un joueur qui n'a plus de cartes passe son tour pour retourner une carte, mais **continue de taper**.
@@ -41,6 +41,7 @@ Deux cartes consécutives forment une paire si :
 - Les ordinateurs visent la carte du dessus (avec une petite imprécision) et ne feintent jamais, mais une feinte peut déclencher leur réflexe de suivre.
 - **Dès qu'un joueur tape, sa main bloque le tas** : plus personne ne joue. Les autres ont **3 secondes** pour taper eux aussi. Ensuite on juge si la première tape était valide.
 - Les mains s'empilent dans l'ordre d'arrivée. **L'ordre est essentiel.**
+- **Verdict** : quand tout le monde a tapé (ou à la fin des 3 secondes), on annonce les perdants. Les mains se retirent **une par une** (la dernière posée d'abord) et les cartes en cause **clignotent en rouge** : les deux cartes de la paire, ou la carte tapée à tort. Ensuite seulement, le tas est distribué.
 - Les cartes ramassées sont toujours **mélangées puis placées sous le tas** de ceux qui ramassent, même s'ils n'avaient plus de cartes. Quand plusieurs joueurs se partagent le tas, les cartes sont distribuées une à une.
 
 ### Tape valide
@@ -72,7 +73,8 @@ Deux cartes consécutives forment une paire si :
 - Caméra à la première personne, assise à la place du joueur.
 - Le joueur ne voit de lui-même **que ses deux mains**.
 - Des adversaires, on ne voit **que les mains et le visage**. Le corps n'est pas affiché, mais il est suggéré par la position des membres.
-- **La main droite suit le curseur de la souris** au-dessus de la table.
+- **La main droite suit la souris** au-dessus de la table, et monte pour passer par-dessus le tas de la main gauche.
+- **La main gauche** (qui tient le tas) se balance doucement dans un petit cercle, comme un balancier.
 - **La caméra suit aussi la souris, avec une faible amplitude**, comme si le joueur regardait l'endroit qu'il pointe.
 
 ## Ordinateurs

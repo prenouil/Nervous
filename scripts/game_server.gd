@@ -15,12 +15,14 @@ signal slap_registered(player: int, order: int, pos: Vector2)  # tape qui touche
 signal slap_missed(player: int, pos: Vector2)                # tape à côté (feinte) : sans effet, la main remonte
 signal card_ejected(player: int, card: int)  # carte qui recouvrait la paire, renvoyée sous le tas de son propriétaire
 signal pile_taken(shares: Dictionary, reason: String)  # { joueur: cartes }, reason : "slap", "false_slap" ou "timeout"
+signal slap_judged(shares: Dictionary, reason: String, highlighted: int)  # verdict annoncé avant le ramassage ; highlighted : nombre de cartes du dessus en cause
 signal game_over(loser: int)
 
 const TURN_TIME := 5.0        # temps pour jouer sa carte
 const CARD_TRAVEL := 0.35     # durée du vol de la carte vers le centre
 const COVER_GRACE := 0.5      # temps pour taper encore une paire après l'atterrissage de la carte qui la recouvre
 const SLAP_WINDOW := 3.0      # temps pour taper une paire visible, puis temps de jugement après la première tape
+const REVEAL_TIME := 1.8      # après le verdict : les mains se retirent, les cartes en cause clignotent
 const RESOLVE_DELAY := 1.9    # pause après un ramassage, le temps de l'animation
 const HAND_RADIUS := 0.045    # rayon de la paume, pour juger si une tape touche
 const PILE_SPREAD_MIN := 0.03 # dispersion des cartes au centre : rayon au début...
@@ -198,8 +200,11 @@ func _resolve_slap() -> void:
 	_slap_order.clear()
 	_slap_positions.clear()
 	_center_layout.clear()
-	pile_taken.emit(rules.give_center_to(losers, rng), reason)
-	_after(RESOLVE_DELAY, func(): _continue_with(losers[0]))
+	var shares := rules.give_center_to(losers, rng)
+	slap_judged.emit(shares, reason, 2 if _slap_valid else 1)
+	_after(REVEAL_TIME, func():
+		pile_taken.emit(shares, reason)
+		_after(RESOLVE_DELAY, func(): _continue_with(losers[0])))
 
 
 # Temps écoulé : le joueur ramasse le tas du centre, puis on passe au suivant.

@@ -40,6 +40,9 @@ const TRAUMA_MAX := 3.0           # les tapes se cumulent jusqu'à cette intensi
 const HEAD_RETARGET := Vector2(0.3, 1.2)  # intervalle (s) entre deux changements de regard des visages
 const HEAD_CHAOS_CHANCE := 0.2    # chance de regarder ailleurs, au hasard
 const HEAD_TURN_SPEED := 7.0      # vitesse de rotation des visages
+const LEFT_SWAY_RADIUS := 0.012   # amplitude du balancier de la main gauche (mètres)
+const DECK_CLEARANCE := 0.012     # marge de la main droite au-dessus du tas de la main gauche
+const HAND_RADIUS := 0.045        # rayon de la paume
 const PICKUP_FLIGHT := 0.85       # durée du vol d'une carte ramassée
 const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
 
@@ -59,6 +62,8 @@ var hand_locked: Array[bool] = []
 var hand_tweens: Array = []
 var center_cards: Array[Node3D] = []
 var heads: Array[Node3D] = []        # visages des ordinateurs (null pour le joueur humain)
+var _left_phase: Array[Vector3] = []  # balancier de la main gauche : deux fréquences et une phase
+var _slap_sequence: Array[int] = []    # joueurs dont la main est posée sur le tas, dans l'ordre
 var _head_targets: Array[Vector3] = []
 var _head_retarget: Array[float] = []
 
@@ -94,6 +99,7 @@ func _ready() -> void:
 		hand_locked.append(false)
 		hand_tweens.append(null)
 		heads.append(null)
+		_left_phase.append(Vector3(randf_range(0.7, 1.3), randf_range(0.7, 1.3), randf() * TAU))
 		_head_targets.append(Vector3.ZERO)
 		_head_retarget.append(0.0)
 
@@ -112,6 +118,7 @@ func _ready() -> void:
 	server.card_played.connect(_on_card_played)
 	server.slap_registered.connect(_on_slap_registered)
 	server.slap_missed.connect(_on_slap_missed)
+	server.slap_judged.connect(_on_slap_judged)
 	server.card_ejected.connect(_on_card_ejected)
 	server.pile_taken.connect(_on_pile_taken)
 	server.game_over.connect(_on_game_over)
@@ -347,6 +354,7 @@ func _process(delta: float) -> void:
 	_update_turn_light(delta)
 	_update_human_hand(delta)
 	_update_heads(delta)
+	_update_left_hands()
 
 	if _turn_player >= 0:
 		_turn_left = maxf(0.0, _turn_left - delta)
@@ -387,7 +395,9 @@ func _update_human_hand(delta: float) -> void:
 		# Pendant une animation, la cible suit la main pour éviter un saut ensuite.
 		_hand_target = Vector3(hand.global_position.x, HAND_Y, hand.global_position.z)
 		return
-	hand.global_position = hand.global_position.lerp(_hand_target, minf(1.0, delta * 25.0))
+	var goal := _hand_target
+	goal.y = _height_over_deck(goal)
+	hand.global_position = hand.global_position.lerp(goal, minf(1.0, delta * 25.0))
 
 
 # Un même mouvement de souris déplace la main de la même distance sur la table,
@@ -397,6 +407,31 @@ func _move_hand_target(relative: Vector2) -> void:
 		return
 	_hand_target.x = clampf(_hand_target.x + relative.x * HAND_SPEED, TABLE_LIMITS.position.x, TABLE_LIMITS.end.x)
 	_hand_target.z = clampf(_hand_target.z + relative.y * HAND_SPEED, TABLE_LIMITS.position.y, TABLE_LIMITS.end.y)
+
+
+# Hauteur de la main droite : elle monte pour passer par-dessus le tas de la main gauche.
+func _height_over_deck(pos: Vector3) -> float:
+	if counts[HUMAN] == 0:
+		return HAND_Y
+	var deck := _deck_top(HUMAN)
+	var outside := Vector2(
+		maxf(0.0, absf(pos.x - deck.x) - CARD_W / 2.0),
+		maxf(0.0, absf(pos.z - deck.z) - CARD_L / 2.0)).length()
+	var above := deck.y + DECK_CLEARANCE
+	# Montée progressive à l'approche du tas, pleine hauteur dès que la paume le survole.
+	var t := clampf((outside - HAND_RADIUS) / 0.04, 0.0, 1.0)
+	return maxf(HAND_Y, lerpf(above, HAND_Y, t))
+
+
+# La main gauche se balance doucement dans un petit cercle, comme un balancier.
+func _update_left_hands() -> void:
+	var t := Time.get_ticks_msec() / 1000.0
+	for p in SEATS:
+		var phase := _left_phase[p]
+		var circle := Vector3(cos(t * phase.x + phase.z), 0, sin(t * phase.y + phase.z)) * LEFT_SWAY_RADIUS
+		var bob := Vector3(0, sin(t * phase.x * 2.0 + phase.z) * 0.003, 0)
+		left_hands[p].position = LEFT_HAND_LOCAL + circle + bob
+		left_hands[p].rotation = Vector3(circle.z * 5.0, 0, -circle.x * 5.0)  # s'incline dans le sens du mouvement
 
 
 # Les visages regardent surtout le joueur actif, parfois le tas, parfois n'importe où.
@@ -549,12 +584,12 @@ func _on_card_played(player: int, card: int, center_count: int, landing: Vector2
 	# Le serveur a choisi où la carte atterrit (il en a besoin pour juger les tapes).
 	var start := node.global_position
 	var end := Vector3(landing.x, center_count * CARD_T + 0.001, landing.y)
-	# Retournement vers l'avant : le bord éloigné se lève, la face se montre aux adversaires.
+	# Retournement vers soi : le bord proche se lève, la face se montre d'abord à l'adversaire d'en face.
 	var flight := node.create_tween()
 	node.set_meta("flight", flight)
 	flight.tween_method(func(t: float):
 		node.global_position = start.lerp(end, t) + Vector3.UP * sin(t * PI) * 0.09
-		node.global_basis = Basis(Vector3.UP, lerp_angle(seat_yaw, end_yaw, t)) * Basis(Vector3.RIGHT, PI * (1.0 - t)),
+		node.global_basis = Basis(Vector3.UP, lerp_angle(seat_yaw, end_yaw, t)) * Basis(Vector3.RIGHT, -PI * (1.0 - t)),
 		0.0, 1.0, GameServer.CARD_TRAVEL)
 
 	if player != HUMAN:
@@ -593,7 +628,61 @@ func _on_card_ejected(player: int, _card: int) -> void:
 func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
 	if player == HUMAN:
 		_human_slap_answered = true
+	_turn_player = -1  # le jeu est bloqué par les mains : plus de compte à rebours
+	_slap_sequence.append(player)
 	_animate_slap(player, pos, order, true)
+
+
+# Verdict : on l'annonce, les mains se retirent une par une (la dernière posée d'abord),
+# et les cartes en cause clignotent en rouge, avant que le tas ne soit distribué.
+func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int) -> void:
+	_turn_player = -1
+	_show_message(_pile_message(shares, reason), GameServer.REVEAL_TIME + 0.6)
+	var k := 0
+	for i in range(_slap_sequence.size() - 1, -1, -1):
+		var p := _slap_sequence[i]
+		var hand := right_hands[p]
+		var ht := _hand_tween(p)
+		ht.tween_interval(0.2 + k * 0.25)
+		ht.tween_property(hand, "global_position", hand.global_position + Vector3(0, 0.08, 0), 0.1)
+		ht.tween_property(hand, "global_position", _rest_pos(p), 0.2)
+		ht.tween_callback(func(): hand_locked[p] = false)
+		k += 1
+	_slap_sequence.clear()
+	var n := center_cards.size()
+	for i in range(maxi(0, n - highlighted), n):
+		_highlight(center_cards[i])
+
+
+# Cadre rouge qui pulse autour de la carte, et carte teintée de rouge.
+func _highlight(card_node: Node3D) -> void:
+	var frame_mat := StandardMaterial3D.new()
+	frame_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	frame_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var border := 0.014
+	var y := CARD_T / 2.0 + 0.0005
+	var strips := [
+		[Vector2(CARD_W + border * 2.0, border), Vector3(0, y, CARD_L / 2.0 + border / 2.0)],
+		[Vector2(CARD_W + border * 2.0, border), Vector3(0, y, -CARD_L / 2.0 - border / 2.0)],
+		[Vector2(border, CARD_L), Vector3(CARD_W / 2.0 + border / 2.0, y, 0)],
+		[Vector2(border, CARD_L), Vector3(-CARD_W / 2.0 - border / 2.0, y, 0)]]
+	for strip in strips:
+		var mesh := PlaneMesh.new()
+		mesh.size = strip[0]
+		var inst := MeshInstance3D.new()
+		inst.mesh = mesh
+		inst.material_override = frame_mat
+		inst.position = strip[1]
+		card_node.add_child(inst)
+	var body: MeshInstance3D = card_node.get_child(0)
+	var body_mat: StandardMaterial3D = white_mat.duplicate()
+	body.material_override = body_mat
+	var pulse := card_node.create_tween().set_loops()
+	pulse.tween_method(func(t: float):
+		var glow := 0.5 - 0.5 * cos(t * TAU)
+		frame_mat.albedo_color = Color(1.0, 0.1, 0.1, lerpf(0.35, 1.0, glow))
+		body_mat.albedo_color = white_mat.albedo_color.lerp(Color(1.0, 0.45, 0.45), glow),
+		0.0, 1.0, 0.5)
 
 
 func _on_slap_missed(player: int, pos: Vector2) -> void:
@@ -606,7 +695,8 @@ func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 	_turn_player = -1
 	_drop_held_card()
 	var takers: Array = shares.keys()
-	_show_message(_pile_message(shares, reason))
+	if reason == "timeout":  # pour les tapes, le verdict a déjà été annoncé
+		_show_message(_pile_message(shares, reason))
 
 	# Les cartes du centre explosent vers le haut en tournoyant, puis plongent
 	# vers le tas de ceux qui ramassent (réparties une par une s'ils sont plusieurs).
