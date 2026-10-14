@@ -154,5 +154,7 @@ Décision : parties **entre amis** d'abord, avec un **joueur qui héberge** la p
 1. Afficher la table depuis n'importe quel siège (le joueur local n'est plus forcément en bas).
 2. Brancher le réseau sur le serveur existant (tests avec deux instances du jeu sur un même PC).
 3. Envoyer les positions de mains en continu, et **corriger la latence des tapes** (équité : quelques dizaines de ms comptent).
-4. Écran de salon (« Jouer à plusieurs ») : héberger / rejoindre, joueurs présents, sièges vides complétés par des ordinateurs.
+4. Écran de salon (« Jouer à plusieurs ») : héberger / rejoindre par adresse IP (pas de réseau local), joueurs présents, sièges vides complétés par des ordinateurs.
+   - **Notice et vérifications pour l'hôte** : port libre sur le PC, ouverture automatique du port sur la box (UPnP), détection d'une adresse IP partagée (CGNAT, hébergement impossible), adresse publique à copier, rappel du pare-feu Windows, marche à suivre manuelle si l'ouverture automatique échoue.
+   - Limite : on ne peut pas garantir depuis le PC de l'hôte qu'un ami pourra se connecter ; la connexion du premier ami fait office de test (le salon l'affiche clairement).
 5. Déconnexions (un joueur qui part est remplacé par un ordinateur), puis tests entre deux PC.
