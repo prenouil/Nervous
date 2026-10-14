@@ -1,6 +1,6 @@
 # Lance la partie et enregistre des captures d'écran.
 # Lancer : Godot --path . --script res://tests/screenshot.gd -- <dossier> [secondes]
-# Variables : SHOT_SCENE (scène à lancer), SHOT_BOTS (nombre d'ordinateurs), SHOT_SEAT (siège du joueur local), SHOT_UNTIL (time, judged, nervous…).
+# Variables : SHOT_SCENE (scène à lancer), SHOT_BOTS (nombre d'ordinateurs), SHOT_SEAT (siège du joueur local), SHOT_LOBBY (choose ou host : ouvre le salon), SHOT_UNTIL (time, judged, nervous…).
 # Produit : <dossier>/time.png après [secondes], plus slap.png et pickup.png
 # au premier ramassage d'au moins 3 cartes (pendant les tapes et pendant le vol des cartes).
 # Et judged.png pendant le premier verdict (mains qui se retirent, cartes en rouge).
@@ -34,6 +34,11 @@ func _process(delta: float) -> bool:
 		server.pile_taken.connect(_on_pile_taken)
 		server.slap_judged.connect(func(_s, _r, _h, _o): if not _shots.has("judged"): _capture_later("judged", 0.9))
 		server.player_nervous.connect(func(_p, _o): if not _shots.has("nervous"): _capture_later("nervous", 0.35))
+	if OS.has_environment("SHOT_LOBBY") and current_scene and current_scene.has_method("_show_lobby") and not _shots.has("lobby_opened"):
+		_shots["lobby_opened"] = true
+		current_scene._show_lobby()
+		if OS.get_environment("SHOT_LOBBY") == "host":
+			current_scene._lobby._on_host_pressed()
 	_wait -= delta
 	if _wait <= 0.0 and not _done_time:
 		_done_time = true

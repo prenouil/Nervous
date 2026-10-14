@@ -2,6 +2,7 @@
 extends Node
 
 const Main = preload("res://scripts/main.gd")
+const Lobby = preload("res://scripts/lobby.gd")
 const MAIN_SCENE := "res://scenes/main.tscn"
 const MIN_BOTS := 1
 const MAX_BOTS := 5
@@ -12,6 +13,8 @@ var _bot_suffix: Label
 var _main_screen: VBoxContainer
 var _options_screen: VBoxContainer
 var _display_button: Button
+var _lobby: VBoxContainer
+var _shade: ColorRect
 
 
 func _ready() -> void:
@@ -28,6 +31,7 @@ func _build_menu() -> void:
 
 	var shade := ColorRect.new()  # assombrit la table pour faire ressortir le menu
 	shade.color = Color(0, 0, 0, 0.45)
+	_shade = shade
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(shade)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -43,6 +47,13 @@ func _build_menu() -> void:
 	_options_screen = _build_options_screen()
 	_options_screen.visible = false
 	screens.add_child(_options_screen)
+	_lobby = Lobby.new()
+	_lobby.visible = false
+	_lobby.closed.connect(func():
+		_lobby.visible = false
+		_main_screen.visible = true
+		_shade.color.a = 0.45)
+	screens.add_child(_lobby)
 	_change_bots(0)
 
 
@@ -69,7 +80,7 @@ func _build_main_screen() -> VBoxContainer:
 	row.add_child(_spacer(0, 20))
 	row.add_child(_solid_button("Jouer !", 42, _start_game))
 
-	column.add_child(_menu_entry(_button("Jouer à plusieurs", 40, Callable()), true))
+	column.add_child(_menu_entry(_button("Jouer à plusieurs", 40, _show_lobby), false))
 	column.add_child(_menu_entry(_button("Options", 40, func(): _show_options(true)), false))
 	column.add_child(_menu_entry(_button("Quitter", 40, func(): get_tree().quit()), false))
 	return column
@@ -194,3 +205,10 @@ func _solid_button(text: String, size: int, action: Callable) -> Button:
 		button.add_theme_stylebox_override(state[0], style)
 	button.pressed.connect(action)
 	return button
+
+
+func _show_lobby() -> void:
+	_main_screen.visible = false
+	_lobby.visible = true
+	_shade.color.a = 0.78  # fond plus sombre : beaucoup de texte à lire
+	_lobby.open()

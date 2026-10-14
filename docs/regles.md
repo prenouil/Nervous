@@ -157,7 +157,9 @@ Décision : parties **entre amis** d'abord, avec un **joueur qui héberge** la p
    - L'hôte mesure l'aller-retour réseau de chaque ami. L'heure de ses tapes est avancée d'autant (**250 ms au plus**) : c'est cet ordre corrigé qui décide qui a tapé en dernier ; au verdict, les mains se réempilent dans le bon ordre.
    - Une tape d'ami partie pendant le délai de grâce d'une paire recouverte, mais arrivée juste après, est acceptée.
    - Le temps pour jouer sa carte est prolongé de l'aller-retour réseau de l'ami.
-4. Écran de salon (« Jouer à plusieurs ») : héberger / rejoindre par adresse IP (pas de réseau local), joueurs présents, sièges vides complétés par des ordinateurs.
+4. ✅ Écran de salon (« Jouer à plusieurs ») : pseudo (mémorisé), héberger / rejoindre par adresse IP (mémorisée, pas de réseau local), joueurs présents avec leur ping, nombre d'ordinateurs pour compléter la table, « Lancer la partie ».
    - **Notice et vérifications pour l'hôte** : port libre sur le PC, ouverture automatique du port sur la box (UPnP), détection d'une adresse IP partagée (CGNAT, hébergement impossible), adresse publique à copier, rappel du pare-feu Windows, marche à suivre manuelle si l'ouverture automatique échoue.
    - Limite : on ne peut pas garantir depuis le PC de l'hôte qu'un ami pourra se connecter ; la connexion du premier ami fait office de test (le salon l'affiche clairement).
+   - L'ouverture automatique du port est temporaire (2 h) et refermée à la fermeture du salon : si le jeu plante, la box la referme d'elle-même. Outil de secours : `tools/upnp_cleanup.gd`.
+   - L'adresse publique est obtenue auprès du service web ipify.
 5. Déconnexions (un joueur qui part est remplacé par un ordinateur), puis tests entre deux PC.
