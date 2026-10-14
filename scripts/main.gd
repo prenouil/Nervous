@@ -10,8 +10,7 @@ const Table = preload("res://scripts/table.gd")
 
 const DEFAULT_BOTS := 5
 const MAX_PLAYERS := 6
-const HUMAN := 0
-const NAMES := ["Toi", "Léon", "Margot", "Igor", "Zoé", "Bruno"]
+const BOT_NAMES := ["Léon", "Margot", "Igor", "Zoé", "Bruno"]
 const SKIN_COLORS := [
 	Color(0.96, 0.78, 0.62), Color(0.55, 0.38, 0.26),
 	Color(0.98, 0.82, 0.70), Color(0.80, 0.60, 0.42),
@@ -39,7 +38,7 @@ const LIGHT_FOLLOW_SPEED := 2.2   # plus c'est bas, plus la lumière de tour est
 const TRAUMA_SLAP := 0.5          # tremblement ajouté par une tape adverse...
 const TRAUMA_HUMAN_SLAP := 0.6    # ...et par la tienne
 const TRAUMA_MAX := 3.0           # les tapes se cumulent jusqu'à cette intensité
-const SWAY_NEUTRAL := Vector2(-0.08, 0.41)  # position de la main (x, z) pour laquelle la caméra regarde droit devant
+const SWAY_NEUTRAL := Vector2(-0.08, -0.14)  # position de la main (repère du siège) pour laquelle la caméra regarde droit devant
 const TENSION_CARDS := 15.0       # nombre de cartes au centre pour une tension maximale
 const TENSION_LEAN := 0.16        # la tête se penche vers la table (mètres) à tension maximale
 const TREMOR_FROM_CARD := 10     # les mains commencent à trembler à partir de cette carte au centre
@@ -58,14 +57,18 @@ const SOUND_GROUPS := {"flop": 5, "flush": 5, "slap": 5, "grunt": 3, "heartbeat"
 const HEARTBEAT_BPM := Vector2(70.0, 140.0)    # battement de cœur : rythme au début du penché, puis au maximum
 const HEARTBEAT_VOLUME := Vector2(-28.0, -4.0)  # et volume (dB)
 const BUZZ_VOLUME := Vector2(-30.0, -14.0)     # grésillement : volume (dB) quand la main effleure le cercle, puis à la limite
-const TABLE_LIMITS := Rect2(-0.6, -0.45, 1.2, 0.95)  # zone accessible à la main droite (x, z)
+const TABLE_LIMITS := Rect2(-0.6, -1.0, 1.2, 0.95)  # zone accessible à la main droite (repère du siège : x à droite, z vers soi)
 
 # Nombre d'ordinateurs de la prochaine partie (choisi dans le menu).
 static var bot_count := DEFAULT_BOTS
+# Siège du joueur local en solo (0 = en bas ; autre valeur utile pour tester l'affichage).
+static var local_seat_choice := 0
 
 # Mode « attente » : la table à 4 joueurs, dans la pénombre, sert de fond au menu.
 var demo_mode := false
 var seat_count := 4
+var local_seat := 0                 # siège du joueur de cet ordinateur (caméra, main, « Toi »)
+var player_names: Array[String] = []
 var _left_local := Vector3.ZERO    # mains au repos, dans le repère du siège (écart selon le nombre de joueurs)
 var _right_local := Vector3.ZERO
 
@@ -126,6 +129,14 @@ var _message_left := 0.0
 
 func _ready() -> void:
 	seat_count = 4 if demo_mode else bot_count + 1
+	local_seat = 0 if demo_mode else clampi(local_seat_choice, 0, seat_count - 1)
+	var bot_index := 0
+	for p in seat_count:
+		if p == local_seat:
+			player_names.append("Toi")
+		else:
+			player_names.append(BOT_NAMES[bot_index])
+			bot_index += 1
 	var spread := Table.hand_spread(seat_count)
 	_left_local = Vector3(-spread, HAND_Y, Table.HAND_FORWARD)
 	_right_local = Vector3(spread, HAND_Y, Table.HAND_FORWARD)
@@ -147,7 +158,7 @@ func _ready() -> void:
 	for i in seat_count:
 		_build_seat(i)
 	_build_camera()
-	_hand_target = _rest_pos(HUMAN)
+	_hand_target = _rest_pos(local_seat)
 	for p in seat_count:
 		_bot_hand_goal[p] = _rest_pos(p)
 	if demo_mode:
@@ -171,7 +182,9 @@ func _ready() -> void:
 	server.hand_moved.connect(_on_hand_moved)
 	server.player_nervous.connect(_on_player_nervous)
 	server.speed_changed.connect(_on_speed_changed)
-	for i in range(1, seat_count):
+	for i in seat_count:
+		if i == local_seat:
+			continue
 		var bot := BotPlayer.new()
 		bot.name = "Bot%d" % i
 		add_child(bot)
@@ -297,7 +310,7 @@ func _build_seat(i: int) -> void:
 	left.add_child(stack)
 	stacks.append(stack)
 
-	if i != HUMAN:
+	if i != local_seat:
 		var head := _make_head(SKIN_COLORS[i], HAIR_COLORS[i])
 		head.position = HEAD_LOCAL
 		root.add_child(head)
@@ -392,7 +405,9 @@ func _build_camera() -> void:
 	camera = Camera3D.new()
 	camera.fov = 65.0 + maxi(0, seat_count - 4) * 4.0  # plus large à 5 ou 6 joueurs, pour garder les visages à l'écran
 	add_child(camera)
-	camera.look_at_from_position(Vector3(0, 0.6, SEAT_RADIUS + 0.35), Vector3(0, 0, -0.02))
+	# Assis à son siège, un peu en retrait, regard vers le centre de la table.
+	var seat := seat_roots[local_seat]
+	camera.look_at_from_position(seat.to_global(Vector3(0, 0.6, 0.35)), seat.to_global(Vector3(0, 0, -SEAT_RADIUS - 0.02)))
 	_camera_pos = camera.position
 	_camera_forward = -camera.basis.z
 	_camera_base = camera.basis
@@ -468,7 +483,8 @@ func _process(delta: float) -> void:
 # La caméra regarde là où pointe la main droite, et tremble selon l'intensité des tapes.
 func _update_camera(delta: float) -> void:
 	# Main en SWAY_NEUTRAL (un peu à gauche du centre) = regard droit devant.
-	var offset := Vector2(_hand_target.x, _hand_target.z) - SWAY_NEUTRAL
+	var hand_local := _seat_local(_hand_target)
+	var offset := Vector2(hand_local.x, hand_local.z) - SWAY_NEUTRAL
 	var target := (offset / SWAY_HAND_RANGE).clamp(Vector2(-1, -1), Vector2(1, 1))
 	_sway = _sway.lerp(target, minf(1.0, delta * 6.0))
 	# Plus le tas grossit, plus on se penche au-dessus de la table.
@@ -493,22 +509,22 @@ func _update_turn_light(delta: float) -> void:
 
 
 func _update_human_hand(delta: float) -> void:
-	var hand := right_hands[HUMAN]
-	if hand_locked[HUMAN]:
+	var hand := right_hands[local_seat]
+	if hand_locked[local_seat]:
 		# Pendant une animation, la cible suit la main pour éviter un saut ensuite.
 		_hand_target = Vector3(hand.global_position.x, HAND_Y, hand.global_position.z)
 		return
 	var goal := _hand_target
 	goal.y = _height_over_deck(goal)
 	hand.global_position = hand.global_position.lerp(goal, minf(1.0, delta * 25.0))
-	server.update_hand(HUMAN, Vector2(hand.global_position.x, hand.global_position.z))
+	server.update_hand(local_seat, Vector2(hand.global_position.x, hand.global_position.z))
 
 
 # Les mains droites des autres joueurs suivent la position annoncée par le serveur
 # (quand elles ne sont pas en pleine animation).
 func _update_other_hands(delta: float) -> void:
 	for p in seat_count:
-		if p == HUMAN or hand_locked[p]:
+		if p == local_seat or hand_locked[p]:
 			continue
 		var hand := right_hands[p]
 		hand.global_position = hand.global_position.lerp(_bot_hand_goal[p], minf(1.0, delta * 6.0))
@@ -544,20 +560,35 @@ func _update_hand_warnings() -> void:
 # Un même mouvement de souris déplace la main de la même distance sur la table,
 # quelle que soit la profondeur.
 func _move_hand_target(relative: Vector2) -> void:
-	if hand_locked[HUMAN]:
+	if hand_locked[local_seat]:
 		return
-	_hand_target.x = clampf(_hand_target.x + relative.x * HAND_SPEED, TABLE_LIMITS.position.x, TABLE_LIMITS.end.x)
-	_hand_target.z = clampf(_hand_target.z + relative.y * HAND_SPEED, TABLE_LIMITS.position.y, TABLE_LIMITS.end.y)
+	# Le mouvement se fait dans le repère du siège : la souris vers la droite = vers ta droite.
+	var local := _seat_local(_hand_target)
+	local.x = clampf(local.x + relative.x * HAND_SPEED, TABLE_LIMITS.position.x, TABLE_LIMITS.end.x)
+	local.z = clampf(local.z + relative.y * HAND_SPEED, TABLE_LIMITS.position.y, TABLE_LIMITS.end.y)
+	local.y = HAND_Y
+	_hand_target = _seat_world(local)
+
+
+# Passage du repère de la table au repère du siège local (x à droite, z vers soi), et inversement.
+func _seat_local(world: Vector3) -> Vector3:
+	return seat_roots[local_seat].to_local(world)
+
+
+func _seat_world(local: Vector3) -> Vector3:
+	return seat_roots[local_seat].to_global(local)
 
 
 # Hauteur de la main droite : elle monte pour passer par-dessus le tas de la main gauche.
 func _height_over_deck(pos: Vector3) -> float:
-	if counts[HUMAN] == 0:
+	if counts[local_seat] == 0:
 		return HAND_Y
-	var deck := _deck_top(HUMAN)
+	var deck_world := _deck_top(local_seat)
+	var deck := _seat_local(deck_world)  # dans le repère du siège, le tas est aligné sur les axes
+	var hand := _seat_local(pos)
 	var outside := Vector2(
-		maxf(0.0, absf(pos.x - deck.x) - CARD_W / 2.0),
-		maxf(0.0, absf(pos.z - deck.z) - CARD_L / 2.0)).length()
+		maxf(0.0, absf(hand.x - deck.x) - CARD_W / 2.0),
+		maxf(0.0, absf(hand.z - deck.z) - CARD_L / 2.0)).length()
 	var above := deck.y + DECK_CLEARANCE
 	# Montée progressive à l'approche du tas, pleine hauteur dès que la paume le survole.
 	var t := clampf((outside - HAND_RADIUS) / 0.04, 0.0, 1.0)
@@ -605,12 +636,12 @@ func _pick_head_target(p: int) -> Vector3:
 func _refresh_hud() -> void:
 	var lines := []
 	for p in seat_count:
-		lines.append("%s : %d carte%s" % [NAMES[p], counts[p], "s" if counts[p] > 1 else ""])
+		lines.append("%s : %d carte%s" % [player_names[p], counts[p], "s" if counts[p] > 1 else ""])
 	hud_counts.text = "\n".join(lines)
-	if _turn_player == HUMAN:
+	if _turn_player == local_seat:
 		hud_turn.text = "À toi de jouer !  %.1f s" % _turn_left
-	elif _turn_player > 0:
-		hud_turn.text = "Au tour de %s  %.1f s" % [NAMES[_turn_player], _turn_left]
+	elif _turn_player >= 0:
+		hud_turn.text = "Au tour de %s  %.1f s" % [player_names[_turn_player], _turn_left]
 	else:
 		hud_turn.text = ""
 
@@ -646,17 +677,17 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _try_grab() -> void:
-	if _turn_player != HUMAN or _held_card != null or hand_locked[HUMAN] or counts[HUMAN] == 0:
+	if _turn_player != local_seat or _held_card != null or hand_locked[local_seat] or counts[local_seat] == 0:
 		return
-	var deck := _deck_top(HUMAN)
+	var deck := _deck_top(local_seat)
 	if Vector2(_hand_target.x - deck.x, _hand_target.z - deck.z).length() > GRAB_RADIUS:
 		return
 	_held_card = _make_card()
-	right_hands[HUMAN].add_child(_held_card)
+	right_hands[local_seat].add_child(_held_card)
 	_held_card.position = Vector3(0, 0.03, -0.02)
 	_held_card.rotation = Vector3(PI, 0, 0)  # face cachée
 	_grab_point = _hand_target
-	server.grab_card(HUMAN)  # en jetant sa carte, on peut franchir la ligne du cercle
+	server.grab_card(local_seat)  # en jetant sa carte, on peut franchir la ligne du cercle
 
 
 func _try_release() -> void:
@@ -664,8 +695,8 @@ func _try_release() -> void:
 		return
 	var center := Vector3(0, HAND_Y, 0)
 	if _hand_target.distance_to(center) < _grab_point.distance_to(center) - PLAY_DRAG_DISTANCE:
-		server.request_play(HUMAN)  # si accepté, _on_card_played récupère la carte tenue
-	server.release_card(HUMAN)  # main lâchée : 0,5 s pour ressortir du cercle
+		server.request_play(local_seat)  # si accepté, _on_card_played récupère la carte tenue
+	server.release_card(local_seat)  # main lâchée : 0,5 s pour ressortir du cercle
 	_drop_held_card()
 
 
@@ -673,20 +704,20 @@ func _drop_held_card() -> void:
 	if _held_card != null:
 		_held_card.queue_free()
 		_held_card = null
-		server.release_card(HUMAN)
+		server.release_card(local_seat)
 
 
 func _try_slap() -> void:
-	if hand_locked[HUMAN]:
+	if hand_locked[local_seat]:
 		return
 	_drop_held_card()
 	# On tape là où est la main : à côté du tas, c'est une feinte.
 	var pos := Vector2(_hand_target.x, _hand_target.z)
 	_human_slap_answered = false
-	server.request_slap(HUMAN, pos)
+	server.request_slap(local_seat, pos)
 	if not _human_slap_answered:
 		# Le serveur n'accepte pas de tape en ce moment (ramassage en cours) : simple geste.
-		_animate_slap(HUMAN, pos, 0, false)
+		_animate_slap(local_seat, pos, 0, false)
 
 
 # --- Réactions aux annonces du serveur ---------------------------------------------
@@ -700,7 +731,7 @@ func _on_game_started(start_counts: Array) -> void:
 func _on_turn_started(player: int, duration: float) -> void:
 	_turn_player = player
 	_turn_left = duration
-	if player != HUMAN:
+	if player != local_seat:
 		_drop_held_card()
 		# La main droite de l'ordinateur va chercher la carte sur son tas.
 		var tw := _hand_tween(player)
@@ -716,7 +747,7 @@ func _on_card_played(player: int, card: int, center_count: int, landing: Vector2
 
 	var seat_yaw := seat_roots[player].rotation.y
 	var node: Node3D
-	if player == HUMAN and _held_card != null:
+	if player == local_seat and _held_card != null:
 		node = _held_card
 		_held_card = null
 		node.reparent(self)
@@ -740,7 +771,7 @@ func _on_card_played(player: int, card: int, center_count: int, landing: Vector2
 		0.0, 1.0, server.card_travel)
 	flight.tween_callback(func(): _play_sound("flop", end, -3.0))
 
-	if player != HUMAN:
+	if player != local_seat:
 		var hand := right_hands[player]
 		var ht := _hand_tween(player)
 		ht.tween_property(hand, "global_position", hand.global_position.lerp(end, 0.5) + Vector3(0, 0.03, 0), 0.18)
@@ -774,7 +805,7 @@ func _on_card_ejected(player: int, _card: int) -> void:
 
 
 func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
-	if player == HUMAN:
+	if player == local_seat:
 		_human_slap_answered = true
 	_turn_player = -1  # le jeu est bloqué par les mains : plus de compte à rebours
 	_slap_sequence.append(player)
@@ -843,7 +874,7 @@ func _highlight(card_node: Node3D) -> void:
 
 
 func _on_hand_moved(player: int, pos: Vector2) -> void:
-	if player != HUMAN:
+	if player != local_seat:
 		_bot_hand_goal[player] = Vector3(pos.x, HAND_Y, pos.y)
 
 
@@ -965,7 +996,7 @@ func _clear_nervous_hands() -> void:
 
 
 func _on_slap_missed(player: int, pos: Vector2) -> void:
-	if player == HUMAN:
+	if player == local_seat:
 		_human_slap_answered = true
 	_animate_slap(player, pos, 0, false)
 
@@ -1012,11 +1043,11 @@ func _on_game_over(loser: int) -> void:
 	_game_over = true
 	_turn_player = -1
 	_stop_effects()
-	_play_end_music(loser != HUMAN)
-	if loser == HUMAN:
+	_play_end_music(loser != local_seat)
+	if loser == local_seat:
 		_show_message("Tu as perdu !\nR : rejouer     M : menu", 1e9)
 	else:
-		_show_message("%s a perdu, tu gagnes !\nR : rejouer     M : menu" % NAMES[loser], 1e9)
+		_show_message("%s a perdu, tu gagnes !\nR : rejouer     M : menu" % player_names[loser], 1e9)
 	if loser >= 0:
 		_light_goal = seat_roots[loser].global_position * 0.55 + Vector3(0, 1.3, 0)
 		_light_aim_goal = seat_roots[loser].to_global(Vector3(0, 0, -0.1))
@@ -1048,7 +1079,7 @@ func _animate_slap(p: int, pos: Vector2, order: int, stay: bool) -> void:
 	var raised := hand.global_position.lerp(target, 0.4) + Vector3(0, 0.12, 0)
 	# Après une feinte, la main du joueur ressort juste hors du cercle ; un ordinateur la ramène au repos.
 	var outside := Table.outside_circle(pos)
-	var back := Vector3(outside.x, HAND_Y, outside.y) if p == HUMAN else _rest_pos(p)
+	var back := Vector3(outside.x, HAND_Y, outside.y) if p == local_seat else _rest_pos(p)
 	var tw := _hand_tween(p)
 	_play_sound("grunt", _mouth_pos(p), -8.0)  # petit effort de celui qui tape
 	tw.tween_property(hand, "global_position", raised, 0.07).set_ease(Tween.EASE_OUT)
@@ -1056,7 +1087,7 @@ func _animate_slap(p: int, pos: Vector2, order: int, stay: bool) -> void:
 	# Chaque tape ajoute du tremblement : des tapes simultanées s'additionnent.
 	tw.tween_callback(func():
 		_play_sound("slap", target, 0.0 if order > 0 else -4.0)
-		_trauma = minf(TRAUMA_MAX, _trauma + (TRAUMA_HUMAN_SLAP if p == HUMAN else TRAUMA_SLAP)))
+		_trauma = minf(TRAUMA_MAX, _trauma + (TRAUMA_HUMAN_SLAP if p == local_seat else TRAUMA_SLAP)))
 	if not stay:
 		tw.tween_interval(0.15)
 		tw.tween_property(hand, "global_position", back, 0.12)
@@ -1095,7 +1126,7 @@ func _pile_message(shares: Dictionary, reason: String) -> String:
 	if takers.size() > 1:
 		var names: Array[String] = []
 		for p in takers:
-			names.append(NAMES[p])
+			names.append(player_names[p])
 		var listed := ", ".join(names.slice(0, -1)) + " et " + names[-1]
 		if reason == "false_slap":
 			return "Tape par erreur ! %s se partagent %d cartes." % [listed, total]
@@ -1104,18 +1135,18 @@ func _pile_message(shares: Dictionary, reason: String) -> String:
 		return "%s n'ont pas tapé : ils se partagent %d cartes !" % [listed, total]
 	var p: int = takers[0]
 	if reason == "nervous":
-		return ("Tu as été nerveux, tu perds !\nTu ramasses %d cartes." % total) if p == HUMAN \
-			else ("%s a été nerveux, il perd !\nIl ramasse %d cartes." % [NAMES[p], total])
+		return ("Tu as été nerveux, tu perds !\nTu ramasses %d cartes." % total) if p == local_seat \
+			else ("%s a été nerveux, il perd !\nIl ramasse %d cartes." % [player_names[p], total])
 	if reason == "false_slap":
-		return ("Tape par erreur ! Tu ramasses %d cartes." % total) if p == HUMAN \
-			else ("%s a tapé par erreur et ramasse %d cartes !" % [NAMES[p], total])
+		return ("Tape par erreur ! Tu ramasses %d cartes." % total) if p == local_seat \
+			else ("%s a tapé par erreur et ramasse %d cartes !" % [player_names[p], total])
 	if reason == "timeout" and total == 0:
-		return "Temps écoulé ! " + ("Tu passes ton tour." if p == HUMAN else NAMES[p] + " passe son tour.")
+		return "Temps écoulé ! " + ("Tu passes ton tour." if p == local_seat else player_names[p] + " passe son tour.")
 	if reason == "timeout":
-		return ("Temps écoulé ! Tu ramasses %d cartes." % total) if p == HUMAN \
-			else ("%s : temps écoulé ! %d cartes ramassées." % [NAMES[p], total])
-	return ("Tu as tapé en dernier ! Tu ramasses %d cartes." % total) if p == HUMAN \
-		else ("%s a tapé en dernier et ramasse %d cartes !" % [NAMES[p], total])
+		return ("Temps écoulé ! Tu ramasses %d cartes." % total) if p == local_seat \
+			else ("%s : temps écoulé ! %d cartes ramassées." % [player_names[p], total])
+	return ("Tu as tapé en dernier ! Tu ramasses %d cartes." % total) if p == local_seat \
+		else ("%s a tapé en dernier et ramasse %d cartes !" % [player_names[p], total])
 
 
 func _update_stack(p: int) -> void:

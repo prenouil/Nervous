@@ -1,6 +1,6 @@
 # Lance la partie et enregistre des captures d'écran.
 # Lancer : Godot --path . --script res://tests/screenshot.gd -- <dossier> [secondes]
-# Variables : SHOT_SCENE (scène à lancer), SHOT_BOTS (nombre d'ordinateurs), SHOT_UNTIL (time, judged, nervous…).
+# Variables : SHOT_SCENE (scène à lancer), SHOT_BOTS (nombre d'ordinateurs), SHOT_SEAT (siège du joueur local), SHOT_UNTIL (time, judged, nervous…).
 # Produit : <dossier>/time.png après [secondes], plus slap.png et pickup.png
 # au premier ramassage d'au moins 3 cartes (pendant les tapes et pendant le vol des cartes).
 # Et judged.png pendant le premier verdict (mains qui se retirent, cartes en rouge).
@@ -19,6 +19,8 @@ func _initialize() -> void:
 		_out = args[0]
 	if args.size() > 1:
 		_wait = float(args[1])
+	if OS.has_environment("SHOT_SEAT"):
+		load("res://scripts/main.gd").local_seat_choice = int(OS.get_environment("SHOT_SEAT"))
 	if OS.has_environment("SHOT_BOTS"):
 		load("res://scripts/main.gd").bot_count = int(OS.get_environment("SHOT_BOTS"))
 	change_scene_to_file(OS.get_environment("SHOT_SCENE") if OS.has_environment("SHOT_SCENE") else "res://scenes/main.tscn")
