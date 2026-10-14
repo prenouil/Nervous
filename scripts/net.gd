@@ -12,6 +12,7 @@ signal status_changed(text: String)
 signal lobby_changed          # liste des joueurs du salon mise à jour
 signal checks_changed         # vérifications de l'hôte mises à jour
 signal left_lobby(reason: String)
+signal player_replaced(seat: int, name: String)  # hôte : un ami est parti en pleine partie
 
 const PORT := 7777
 const MAX_PLAYERS := 6
@@ -43,6 +44,7 @@ var _upnp_thread: Thread
 var _auto_start_humans := 0  # lancement de test : démarre seul quand assez d'amis sont là
 var _auto_start_players := 0
 var _ping_timer := 0.0
+var last_message := ""       # dernière raison de retour au menu (affichée par le menu)
 
 
 func _ready() -> void:
@@ -103,6 +105,20 @@ func host(pseudo: String) -> Error:
 	return OK
 
 
+func _on_peer_disconnected(peer_id: int) -> void:
+	var seat: int = seat_of_peer.get(peer_id, -1)
+	var who := _name_of(peer_id)
+	lobby = lobby.filter(func(e): return e.id != peer_id)
+	seat_of_peer.erase(peer_id)
+	_ready_peers.erase(peer_id)
+	if in_game and seat >= 0:
+		player_replaced.emit(seat, who)  # la table de l'hôte met un ordinateur à sa place
+		_check_all_ready()               # s'il partait pendant le chargement, on ne l'attend plus
+	else:
+		_broadcast_lobby()
+		status_changed.emit("%s est parti." % who)
+
+
 func _on_peer_connected(peer_id: int) -> void:
 	if in_game or lobby.size() >= MAX_PLAYERS:
 		multiplayer.multiplayer_peer.disconnect_peer(peer_id)  # partie lancée ou salon plein
@@ -111,11 +127,6 @@ func _on_peer_connected(peer_id: int) -> void:
 	_broadcast_lobby()
 
 
-func _on_peer_disconnected(peer_id: int) -> void:
-	lobby = lobby.filter(func(e): return e.id != peer_id)
-	seat_of_peer.erase(peer_id)
-	_broadcast_lobby()
-	status_changed.emit("Un joueur est parti.")
 
 
 # Un ami envoie son pseudo en arrivant.
@@ -329,6 +340,7 @@ func _on_server_disconnected() -> void:
 	var was_in_game := in_game
 	leave()
 	if was_in_game:
+		last_message = "L'hôte a quitté la partie (ou sa connexion a été perdue)."
 		get_tree().change_scene_to_file(MENU_SCENE)
 	else:
 		left_lobby.emit("L'hôte a fermé le salon.")

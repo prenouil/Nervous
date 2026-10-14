@@ -20,6 +20,7 @@ signal slap_judged(shares: Dictionary, reason: String, highlighted: int, order: 
 signal hand_moved(player: int, pos: Vector2)     # position de la main droite d'un joueur, pour l'afficher chez les autres
 signal player_nervous(player: int, order: int)  # main restée trop loin dans le cercle : NERVOUS !
 signal speed_changed(level: int)  # la partie s'accélère (au début d'une nouvelle manche)
+signal player_replaced(player: int)  # un ami est parti : un ordinateur joue à sa place
 signal game_over(loser: int)
 
 const TURN_TIME := 5.0        # temps pour jouer sa carte (au niveau 0)
@@ -133,6 +134,8 @@ func request_play(p: int) -> void:
 	if state != State.TURN or p != current_player or rules.count(p) == 0:
 		return
 	var card := rules.play(p)
+	if OS.has_environment("NET_LOG"):
+		print("[serveur] carte jouée par le siège ", p)
 	var count := rules.center.size()
 	# La carte atterrit de plus en plus loin du centre à mesure que le tas grossit.
 	var spread := lerpf(PILE_SPREAD_MIN, PILE_SPREAD_MAX, clampf(count / 6.0, 0.0, 1.0))
@@ -472,6 +475,7 @@ func host_network(seat_of_peer: Dictionary) -> void:
 	slap_judged.connect(func(a, b, c, d): _broadcast("slap_judged", [a, b, c, d]))
 	player_nervous.connect(func(a, b): _broadcast("player_nervous", [a, b]))
 	speed_changed.connect(func(a): _broadcast("speed_changed", [a]))
+	player_replaced.connect(func(a): _broadcast("player_replaced", [a]))
 	game_over.connect(func(a): _broadcast("game_over", [a]))
 
 
@@ -567,3 +571,13 @@ func _corrected_slap_order() -> Array[int]:
 	for i in indices:
 		order.append(_slap_order[i])
 	return order
+
+
+# Hôte : un ami est parti en pleine partie. Sa main est libérée (plus de carte tenue ni de
+# ligne franchie) ; un ordinateur, créé par la table, jouera à sa place.
+func replace_by_bot(seat: int) -> void:
+	_ensure_players()
+	_holding[seat] = false
+	_throw_exit[seat] = false
+	_cross_start[seat] = -1.0
+	player_replaced.emit(seat)

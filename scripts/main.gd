@@ -189,6 +189,7 @@ func _ready() -> void:
 	server.hand_moved.connect(_on_hand_moved)
 	server.player_nervous.connect(_on_player_nervous)
 	server.speed_changed.connect(_on_speed_changed)
+	server.player_replaced.connect(_on_player_replaced)
 	# Les ordinateurs vivent là où tourne le serveur : en solo, ou chez l'hôte.
 	var bots: Array[int] = []
 	if not _networked():
@@ -209,10 +210,13 @@ func _ready() -> void:
 	elif Net.is_host:
 		# L'hôte attend que chaque ami ait chargé la table avant de distribuer.
 		server.host_network(Net.seat_of_peer)
+		Net.player_replaced.connect(_replace_by_bot)
 		Net.when_all_ready.call_deferred(func(): server.start_game(seat_count))
 	else:
 		server.remote = true  # relais : demandes envoyées à l'hôte, annonces reçues de lui
 		Net.scene_ready.call_deferred()
+	if OS.has_environment("AUTOLEAVE"):  # tests : quitte la partie au bout de N secondes
+		get_tree().create_timer(float(OS.get_environment("AUTOLEAVE"))).timeout.connect(_back_to_menu)
 
 
 # Pénombre pour le fond du menu : lampe et ambiance baissées, pas de lumière de tour.
@@ -1084,10 +1088,11 @@ func _on_game_over(loser: int) -> void:
 	_turn_player = -1
 	_stop_effects()
 	_play_end_music(loser != local_seat)
+	var keys := "M : menu" if _networked() else "R : rejouer     M : menu"  # en réseau, pas de « rejouer » pour l'instant
 	if loser == local_seat:
-		_show_message("Tu as perdu !\nR : rejouer     M : menu", 1e9)
+		_show_message("Tu as perdu !\n" + keys, 1e9)
 	else:
-		_show_message("%s a perdu, tu gagnes !\nR : rejouer     M : menu" % player_names[loser], 1e9)
+		_show_message("%s a perdu, tu gagnes !\n%s" % [player_names[loser], keys], 1e9)
 	if loser >= 0:
 		_light_goal = seat_roots[loser].global_position * 0.55 + Vector3(0, 1.3, 0)
 		_light_aim_goal = seat_roots[loser].to_global(Vector3(0, 0, -0.1))
@@ -1400,3 +1405,20 @@ func _back_to_menu() -> void:
 
 func _networked() -> bool:
 	return not demo_mode and Net.active
+
+
+# Hôte : un ami est parti en pleine partie, un ordinateur prend sa place.
+func _replace_by_bot(seat: int, _name: String) -> void:
+	if OS.has_environment("NET_LOG"):
+		print("[hôte] siège %d remplacé par un ordinateur" % seat)
+	server.replace_by_bot(seat)
+	var bot := BotPlayer.new()
+	bot.name = "Bot%d" % seat
+	add_child(bot)
+	bot.setup(seat, server)
+
+
+# Chez tout le monde : on prévient, et son nom indique qu'un ordinateur joue désormais.
+func _on_player_replaced(seat: int) -> void:
+	_show_message("%s est parti : un ordinateur prend sa place." % player_names[seat], 3.0)
+	player_names[seat] += " (ordi)"

@@ -162,4 +162,5 @@ Décision : parties **entre amis** d'abord, avec un **joueur qui héberge** la p
    - Limite : on ne peut pas garantir depuis le PC de l'hôte qu'un ami pourra se connecter ; la connexion du premier ami fait office de test (le salon l'affiche clairement).
    - L'ouverture automatique du port est temporaire (2 h) et refermée à la fermeture du salon : si le jeu plante, la box la referme d'elle-même. Outil de secours : `tools/upnp_cleanup.gd`.
    - L'adresse publique est obtenue auprès du service web ipify.
-5. Déconnexions (un joueur qui part est remplacé par un ordinateur), puis tests entre deux PC.
+5. ✅ Déconnexions : un ami qui part en pleine partie (volontairement, en fermant le jeu ou en perdant sa connexion) est **remplacé par un ordinateur** qui reprend ses cartes ; tout le monde est prévenu et son nom devient « Pseudo (ordi) ». Si l'hôte part, les amis reviennent au menu avec un message. En fin de partie en réseau : « M : menu » seulement.
+6. À faire : tests entre deux PC (avec un ami).

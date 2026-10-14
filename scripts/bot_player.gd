@@ -44,6 +44,14 @@ func setup(p_seat: int, p_server: GameServer) -> void:
 	server.slap_registered.connect(_on_slap_registered)
 	server.player_nervous.connect(_on_player_nervous)
 	server.slap_missed.connect(func(player, _pos): _on_slap_registered(player, 0, Vector2.ZERO))
+	if server.state != GameServer.State.IDLE:
+		# Remplaçant d'un joueur parti en pleine partie : il reprend la situation en cours.
+		_center.assign(server.rules.center)
+		server.update_hand(seat, Table.right_hand_rest(seat, server.rules.num_players))
+		if server.state == GameServer.State.TURN and server.current_player == seat:
+			_on_turn_started(seat, server.turn_time)
+		elif server.state == GameServer.State.SLAP:
+			_schedule_slap(_reaction_time())
 
 
 func _on_turn_started(player: int, _duration: float) -> void:

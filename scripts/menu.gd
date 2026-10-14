@@ -28,6 +28,7 @@ func _ready() -> void:
 func _build_menu() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
+	_show_return_message.call_deferred(layer)
 
 	var shade := ColorRect.new()  # assombrit la table pour faire ressortir le menu
 	shade.color = Color(0, 0, 0, 0.45)
@@ -212,3 +213,21 @@ func _show_lobby() -> void:
 	_lobby.visible = true
 	_shade.color.a = 0.78  # fond plus sombre : beaucoup de texte à lire
 	_lobby.open()
+
+
+# Raison du retour au menu (ex. l'hôte a quitté la partie), affichée en bas de l'écran.
+func _show_return_message(layer: CanvasLayer) -> void:
+	if OS.has_environment("NET_LOG") and not Net.last_message.is_empty():
+		print("[menu] ", Net.last_message)
+	if Net.last_message.is_empty():
+		return
+	var label := _label(Net.last_message, 30)
+	label.add_theme_color_override("font_color", Color(1.0, 0.75, 0.2))
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layer.add_child(label)
+	label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	label.offset_top = -70
+	Net.last_message = ""
+	var fade := label.create_tween()
+	fade.tween_interval(6.0)
+	fade.tween_property(label, "modulate:a", 0.0, 1.0)
