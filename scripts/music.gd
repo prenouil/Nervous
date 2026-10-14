@@ -7,6 +7,7 @@ const MUSIC_VOLUME := -17.0  # discrète
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS  # continue pendant la pause
 	if not ResourceLoader.exists(MUSIC_PATH):
 		return
 	stream = load(MUSIC_PATH)

@@ -71,7 +71,7 @@ Deux cartes consécutives forment une paire si :
 - Une main droite qui **touche un peu le cercle** (moins de 2 cm) **pulse en rouge, tremble et grésille** (bruit discret d'électricité) : simple avertissement.
 - Une main qui **franchit la ligne** (plus de 2 cm) doit **taper dans les 0,5 s** (une feinte compte). Si le joueur ne tape pas à temps, **ou ramène sa main avant d'avoir tapé**, il est **nerveux** !
 - **Exception : jeter sa carte.** Pendant son tour, un joueur qui tient sa carte peut franchir la ligne impunément. Une fois la carte lâchée, il doit **ressortir du cercle dans la seconde**, sinon il est nerveux.
-- Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 1 s, une **voix crie « Nervous ! »**, et une **lumière rouge clignote** sur la main fautive.
+- Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 1 s, un **cri de terreur masculin** (« AAAH ! ») retentit, et une **lumière rouge clignote** sur la main fautive.
 - Pendant les **0,5 s** qui suivent, toute autre main qui franchit la ligne est aussi déclarée nerveuse.
 - Ensuite on l'explique (« Tu as été nerveux, tu perds ! ») et **les nerveux se partagent le tas**. Le premier nerveux joue la carte suivante (choix provisoire).
 - Après une feinte, la main du joueur ressort automatiquement juste hors du cercle.
@@ -134,13 +134,14 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 | Ramassage | « flushhh » et « flop » pour les cartes qui volent vers les tas |
 | Le tas grossit | battement de cœur, de plus en plus fort et rapide (70 à 140 par minute) à mesure que tu te penches |
 | Main qui touche le cercle | grésillement électrique discret, plus fort quand elle s'enfonce |
-| NERVOUS ! | une voix de synthèse crie « Nervous ! » (cri synthétisé de secours si aucune voix) |
+| NERVOUS ! | cri de terreur masculin, court (« AAAH ! ») |
 | En permanence (dès le menu, sans jamais s'arrêter) | musique enjouée et rythmée en boucle (2 min, composition originale) : 128 BPM, batterie, basse « oom-pah », accords piqués à contretemps, mélodie au xylophone (et au sifflet) |
 | Fin de partie | tous les effets s'arrêtent ; **défaite** : courte mélodie triste ; **victoire** : fanfare, applaudissements et cris de joie |
 
 ## Menu
 
 - Titre : **« Don't Be NERVOUS !!! »**, sur la table à 4 joueurs qui attend dans la pénombre.
-- **Jouer contre ◀ 3 ▶ ordis — GO** : de 1 à 5 ordinateurs (2 à 6 joueurs en tout).
-- **Jouer à plusieurs** (grisé, à venir), **Options** (grisé, à venir), **Quitter**.
+- **Jouer contre ◀ 5 ▶ ordis — [Jouer !]** : de 1 à 5 ordinateurs (2 à 6 joueurs en tout), 5 par défaut.
+- **Jouer à plusieurs** (grisé, à venir), **Options** (affichage fenêtré ou plein écran, mémorisé ; « Retour » ramène au menu), **Quitter**.
+- En jeu, **Échap** met en pause : **Continuer** ou **Revenir au menu**.
 - En fin de partie : **R** pour rejouer, **M** pour revenir au menu.

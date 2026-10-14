@@ -234,30 +234,52 @@ func _buzz() -> PackedFloat32Array:
 	return out
 
 
-# Cri de secours (si aucune voix de synthèse n'est disponible) : « nèèr-vouuuuuus ! »,
-# voix aiguë qui monte sur le « ou » puis retombe, avec un « s » soufflé à la fin.
+# Cri de terreur masculin, court : « AAAH ! ». Voix d'homme qui part très haut dans l'aigu,
+# rauque et instable (tremblements, à-coups), sur la voyelle « a », puis se brise vers le grave.
 func _nervous_cry() -> PackedFloat32Array:
-	var duration := 1.7
+	var duration := 0.8
 	var out := _buffer(duration)
+	var formants := [_resonator(780.0, 110.0), _resonator(1250.0, 140.0), _resonator(2600.0, 220.0)]
+	var formant_gains := [1.0, 0.7, 0.35]
+	var breath := _lowpass(4000.0)
 	var phase := 0.0
-	var f1 := _lowpass(500.0)
-	var f2 := _lowpass(500.0)
-	var hiss := _lowpass(7000.0)
+	var jitter := 0.0
 	for i in out.size():
 		var t := float(i) / RATE
-		var pitch := 260.0 + 140.0 * sin(PI * clampf((t - 0.25) / 1.2, 0.0, 1.0))
-		pitch *= 1.0 + 0.03 * sin(TAU * 6.0 * t)
-		phase += pitch / RATE
+		var u := t / duration
+		# Hauteur : attaque qui monte en flèche (≈ 180 → 420 Hz), tient, puis se brise.
+		var pitch := 180.0 + 240.0 * minf(t / 0.06, 1.0)
+		if u > 0.7:
+			pitch *= 1.0 - 0.45 * (u - 0.7) / 0.3
+		pitch *= 1.0 + 0.035 * sin(TAU * 9.0 * t)  # tremblement de peur
+		if i % 120 == 0:
+			jitter = rng.randf_range(-0.04, 0.04)  # voix instable
+		phase += pitch * (1.0 + jitter) / RATE
+		# Source rauque : impulsion glottale (dent de scie) + sous-harmonique + souffle.
 		var saw := 2.0 * fposmod(phase, 1.0) - 1.0
-		# « nèr » : son plus ouvert (formant plus aigu) ; « vouuu » : son fermé et sombre.
-		var openness := 1.0 if t < 0.25 else 0.35
-		var voiced := f2.call(f1.call(saw)) as float
-		var bright := saw * 0.15 * openness
-		var env := minf(t / 0.03, 1.0) * (1.0 if t < 1.35 else maxf(0.0, 1.0 - (t - 1.35) / 0.15))
-		var noise := rng.randf_range(-1.0, 1.0)
-		var s := (noise - (hiss.call(noise) as float)) * (1.0 if t > 1.4 and t < 1.65 else 0.0) * 0.6
-		out[i] = (voiced * 2.2 + bright) * env + s
+		var sub := 0.35 * (2.0 * fposmod(phase * 0.5, 1.0) - 1.0)
+		var noise := (breath.call(rng.randf_range(-1.0, 1.0)) as float) * 0.5
+		var source := saw + sub + noise
+		var voice := 0.0
+		for k in formants.size():
+			voice += (formants[k].call(source) as float) * formant_gains[k]
+		var env := minf(t / 0.015, 1.0) * (1.0 if u < 0.75 else maxf(0.0, 1.0 - (u - 0.75) / 0.25))
+		out[i] = tanh(voice * 3.0) * env  # légère saturation : cri à pleins poumons
 	return out
+
+
+# Résonateur (filtre passe-bande à deux pôles) : imite un formant de la voix.
+func _resonator(freq: float, bandwidth: float) -> Callable:
+	var r := exp(-PI * bandwidth / RATE)
+	var a1 := 2.0 * r * cos(TAU * freq / RATE)
+	var a2 := -r * r
+	var gain := 1.0 - r
+	var state := [0.0, 0.0]
+	return func(x: float) -> float:
+		var y: float = gain * x + a1 * state[0] + a2 * state[1]
+		state[1] = state[0]
+		state[0] = y
+		return y
 
 
 # Musique du jeu en boucle (2 minutes, composition originale) : enjouée et sautillante,

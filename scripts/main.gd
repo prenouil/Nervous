@@ -8,7 +8,7 @@ const BotPlayer = preload("res://scripts/bot_player.gd")
 const Cards = preload("res://scripts/cards.gd")
 const Table = preload("res://scripts/table.gd")
 
-const DEFAULT_BOTS := 3
+const DEFAULT_BOTS := 5
 const MAX_PLAYERS := 6
 const HUMAN := 0
 const NAMES := ["Toi", "Léon", "Margot", "Igor", "Zoé", "Bruno"]
@@ -92,6 +92,7 @@ var _head_retarget: Array[float] = []
 var _bot_hand_goal: Array[Vector3] = []  # position annoncée par le serveur pour la main droite des autres joueurs
 var hud_nervous: Label
 var hud_speed: Label
+var _pause_layer: CanvasLayer
 
 var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
@@ -419,9 +420,10 @@ func _build_hud() -> void:
 	hud_speed.add_theme_constant_override("outline_size", 20)
 	hud_speed.text = "La partie s'accélère !"
 	hud_speed.visible = false
+	_build_pause_menu()
 	var help := _hud_label(layer, 18, Control.PRESET_BOTTOM_WIDE, HORIZONTAL_ALIGNMENT_CENTER)
 	help.offset_top = -40
-	help.text = "Clic gauche sur ton tas puis glisse vers le centre : jouer    |    Clic droit : taper (sur la carte du dessus… ou à côté pour feinter)    |    Échap : libérer la souris (clic pour reprendre)"
+	help.text = "Clic gauche sur ton tas puis glisse vers le centre : jouer    |    Clic droit : taper (sur la carte du dessus… ou à côté pour feinter)    |    Échap : pause"
 
 
 func _hud_label(layer: CanvasLayer, size: int, preset: Control.LayoutPreset, align: HorizontalAlignment) -> Label:
@@ -641,8 +643,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_tree().change_scene_to_file("res://scenes/menu.tscn")
 		elif event.keycode == KEY_R and _game_over:
 			get_tree().reload_current_scene()
-		elif event.keycode == KEY_ESCAPE:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _try_grab() -> void:
@@ -1224,7 +1224,6 @@ func _update_heartbeat(delta: float) -> void:
 
 # Fin de partie : on coupe tous les effets visuels et sonores en cours.
 func _stop_effects() -> void:
-	DisplayServer.tts_stop()
 	for buzz in _buzz_players:
 		buzz.stop()
 	_trauma = 0.0
@@ -1250,20 +1249,76 @@ func _play_end_music(victory: bool) -> void:
 	player.play()
 
 
-# Cri « Nervouuuus !!! » : voix de synthèse du système si possible (anglaise de préférence,
-# lente et aiguë), sinon le cri synthétisé de secours.
+# Cri de terreur masculin, court : « AAAH ! ».
 func _shout_nervous() -> void:
-	var voices := DisplayServer.tts_get_voices_for_language("en")
-	if voices.is_empty():
-		voices = DisplayServer.tts_get_voices()
-	if voices.is_empty():
-		_play_ui_sound("nervous_cry", -2.0, 1.3)  # accéléré : cri plus court
-		return
-	DisplayServer.tts_stop()
-	DisplayServer.tts_speak("Nervous!", voices[0], 100, 1.6, 0.8)
+	_play_ui_sound("nervous_cry", -2.0)
 
 
 # Nouvelle manche plus rapide : grosse annonce au centre de l'écran.
 func _on_speed_changed(level: int) -> void:
 	hud_speed.text = "La partie s'accélère !\nNiveau %d" % (level + 1)
 	_show_banner(hud_speed)
+
+
+# --- Pause ----------------------------------------------------------------------------
+
+# Reçoit Échap même quand le jeu est en pause (le reste de la scène est alors figé).
+class PauseInput extends Node:
+	var on_escape: Callable
+
+	func _unhandled_input(event: InputEvent) -> void:
+		if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+			on_escape.call()
+			get_viewport().set_input_as_handled()
+
+
+func _build_pause_menu() -> void:
+	_pause_layer = CanvasLayer.new()
+	_pause_layer.layer = 10
+	_pause_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	_pause_layer.visible = false
+	add_child(_pause_layer)
+	var shade := ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.6)
+	_pause_layer.add_child(shade)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var center := CenterContainer.new()
+	_pause_layer.add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 24)
+	center.add_child(column)
+	var title := Label.new()
+	title.text = "Pause"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 80)
+	title.add_theme_color_override("font_color", WARNING_RED)
+	title.add_theme_color_override("font_outline_color", Color.BLACK)
+	title.add_theme_constant_override("outline_size", 18)
+	column.add_child(title)
+	for entry in [["Continuer", func(): _set_paused(false)], ["Revenir au menu", _back_to_menu]]:
+		var button := Button.new()
+		button.text = entry[0]
+		button.flat = true
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size", 40)
+		button.add_theme_color_override("font_outline_color", Color.BLACK)
+		button.add_theme_constant_override("outline_size", 10)
+		button.add_theme_color_override("font_hover_color", WARNING_RED)
+		button.pressed.connect(entry[1])
+		column.add_child(button)
+	var input := PauseInput.new()
+	input.process_mode = Node.PROCESS_MODE_ALWAYS
+	input.on_escape = func(): _set_paused(not get_tree().paused)
+	add_child(input)
+
+
+func _set_paused(paused: bool) -> void:
+	get_tree().paused = paused
+	_pause_layer.visible = paused
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if paused else Input.MOUSE_MODE_CAPTURED
+
+
+func _back_to_menu() -> void:
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/menu.tscn")

@@ -14,12 +14,10 @@ config/name="Nervous"
 run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
-[audio]
-
-general/text_to_speech=true
 
 [autoload]
 
+Settings="*res://scripts/settings.gd"
 Music="*res://scripts/music.gd"
 
 [display]

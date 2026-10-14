@@ -9,6 +9,9 @@ const TITLE_RED := Color(0.9, 0.1, 0.1)
 
 var _bot_label: Label
 var _bot_suffix: Label
+var _main_screen: VBoxContainer
+var _options_screen: VBoxContainer
+var _display_button: Button
 
 
 func _ready() -> void:
@@ -33,19 +36,22 @@ func _build_menu() -> void:
 	layer.add_child(center)
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var column := VBoxContainer.new()
-	column.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_theme_constant_override("separation", 26)
-	center.add_child(column)
+	var screens := VBoxContainer.new()
+	center.add_child(screens)
+	_main_screen = _build_main_screen()
+	screens.add_child(_main_screen)
+	_options_screen = _build_options_screen()
+	_options_screen.visible = false
+	screens.add_child(_options_screen)
+	_change_bots(0)
 
-	var title := _label("Don't Be NERVOUS !!!", 92)
-	title.add_theme_color_override("font_color", TITLE_RED)
-	title.add_theme_constant_override("outline_size", 22)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	column.add_child(title)
+
+func _build_main_screen() -> VBoxContainer:
+	var column := _column()
+	column.add_child(_title("Don't Be NERVOUS !!!", 92))
 	column.add_child(_spacer(30))
 
-	# « Jouer contre ◀ 3 ▶ ordis   GO »
+	# « Jouer contre ◀ 5 ▶ ordis   [Jouer !] »
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 14)
@@ -60,15 +66,46 @@ func _build_menu() -> void:
 	_bot_suffix = _label("", 40)
 	_bot_suffix.custom_minimum_size.x = 110
 	row.add_child(_bot_suffix)
-	var go := _button("GO", 44, _start_game)
-	go.add_theme_color_override("font_color", TITLE_RED)
-	go.custom_minimum_size.x = 130
-	row.add_child(go)
+	row.add_child(_spacer(0, 20))
+	row.add_child(_solid_button("Jouer !", 42, _start_game))
 
 	column.add_child(_menu_entry(_button("Jouer à plusieurs", 40, Callable()), true))
-	column.add_child(_menu_entry(_button("Options", 40, Callable()), true))
+	column.add_child(_menu_entry(_button("Options", 40, func(): _show_options(true)), false))
 	column.add_child(_menu_entry(_button("Quitter", 40, func(): get_tree().quit()), false))
-	_change_bots(0)
+	return column
+
+
+# Options : une seule pour l'instant, fenêtré ou plein écran (mémorisée entre deux lancements).
+func _build_options_screen() -> VBoxContainer:
+	var column := _column()
+	column.add_child(_title("Options", 80))
+	column.add_child(_spacer(20))
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 20)
+	row.add_child(_label("Affichage", 40))
+	_display_button = _solid_button("", 36, _toggle_fullscreen)
+	_display_button.custom_minimum_size.x = 300
+	row.add_child(_display_button)
+	column.add_child(row)
+	column.add_child(_spacer(20))
+	column.add_child(_menu_entry(_button("Retour", 40, func(): _show_options(false)), false))
+	_refresh_display_button()
+	return column
+
+
+func _show_options(show: bool) -> void:
+	_main_screen.visible = not show
+	_options_screen.visible = show
+
+
+func _toggle_fullscreen() -> void:
+	Settings.set_fullscreen(not Settings.fullscreen)
+	_refresh_display_button()
+
+
+func _refresh_display_button() -> void:
+	_display_button.text = "Plein écran" if Settings.fullscreen else "Fenêtré"
 
 
 func _change_bots(step: int) -> void:
@@ -112,7 +149,48 @@ func _menu_entry(button: Button, greyed: bool) -> Control:
 	return button
 
 
-func _spacer(height: int) -> Control:
+func _spacer(height: int, width := 0) -> Control:
 	var spacer := Control.new()
-	spacer.custom_minimum_size.y = height
+	spacer.custom_minimum_size = Vector2(width, height)
 	return spacer
+
+
+func _column() -> VBoxContainer:
+	var column := VBoxContainer.new()
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_theme_constant_override("separation", 26)
+	return column
+
+
+func _title(text: String, size: int) -> Label:
+	var title := _label(text, size)
+	title.add_theme_color_override("font_color", TITLE_RED)
+	title.add_theme_constant_override("outline_size", 22)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return title
+
+
+# Vrai bouton plein (fond rouge arrondi, plus clair au survol, plus sombre au clic).
+func _solid_button(text: String, size: int, action: Callable) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.focus_mode = Control.FOCUS_NONE
+	button.add_theme_font_size_override("font_size", size)
+	button.add_theme_color_override("font_color", Color.WHITE)
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	button.add_theme_color_override("font_pressed_color", Color(1, 1, 1, 0.8))
+	for state in [["normal", TITLE_RED], ["hover", TITLE_RED.lightened(0.2)], ["pressed", TITLE_RED.darkened(0.3)]]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = state[1]
+		style.set_corner_radius_all(14)
+		style.set_content_margin_all(12)
+		style.content_margin_left = 34
+		style.content_margin_right = 34
+		style.border_color = Color(1, 1, 1, 0.85)
+		style.set_border_width_all(3)
+		style.shadow_color = Color(0, 0, 0, 0.6)
+		style.shadow_size = 6
+		style.shadow_offset = Vector2(0, 4)
+		button.add_theme_stylebox_override(state[0], style)
+	button.pressed.connect(action)
+	return button
