@@ -19,6 +19,7 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 
 Settings="*res://scripts/settings.gd"
 Music="*res://scripts/music.gd"
+Net="*res://scripts/net.gd"
 
 [display]
 

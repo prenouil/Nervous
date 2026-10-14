@@ -110,7 +110,7 @@ var _buzz_players: Array[AudioStreamPlayer3D] = []
 var _camera_forward := Vector3.FORWARD
 var _light_pos := Vector3(0, 1.5, 0)
 var _light_goal := Vector3(0, 1.5, 0)
-var _light_aim := Vector3.ZERO
+var _light_aim := Vector3(0, 0, 0.3)  # pas à la verticale de la lumière (évite une orientation indéfinie)
 var _light_aim_goal := Vector3.ZERO
 
 var _held_card: Node3D = null
@@ -128,15 +128,22 @@ var _message_left := 0.0
 
 
 func _ready() -> void:
-	seat_count = 4 if demo_mode else bot_count + 1
-	local_seat = 0 if demo_mode else clampi(local_seat_choice, 0, seat_count - 1)
-	var bot_index := 0
-	for p in seat_count:
-		if p == local_seat:
-			player_names.append("Toi")
-		else:
-			player_names.append(BOT_NAMES[bot_index])
-			bot_index += 1
+	if _networked():
+		# Partie en réseau : sièges et noms fixés par l'hôte.
+		seat_count = Net.seat_count
+		local_seat = Net.local_seat
+		player_names.assign(Net.names)
+		player_names[local_seat] = "Toi"
+	else:
+		seat_count = 4 if demo_mode else bot_count + 1
+		local_seat = 0 if demo_mode else clampi(local_seat_choice, 0, seat_count - 1)
+		var bot_index := 0
+		for p in seat_count:
+			if p == local_seat:
+				player_names.append("Toi")
+			else:
+				player_names.append(BOT_NAMES[bot_index])
+				bot_index += 1
 	var spread := Table.hand_spread(seat_count)
 	_left_local = Vector3(-spread, HAND_Y, Table.HAND_FORWARD)
 	_right_local = Vector3(spread, HAND_Y, Table.HAND_FORWARD)
@@ -182,16 +189,30 @@ func _ready() -> void:
 	server.hand_moved.connect(_on_hand_moved)
 	server.player_nervous.connect(_on_player_nervous)
 	server.speed_changed.connect(_on_speed_changed)
-	for i in seat_count:
-		if i == local_seat:
-			continue
+	# Les ordinateurs vivent là où tourne le serveur : en solo, ou chez l'hôte.
+	var bots: Array[int] = []
+	if not _networked():
+		for i in seat_count:
+			if i != local_seat:
+				bots.append(i)
+	elif Net.is_host:
+		bots = Net.bot_seats
+	for i in bots:
 		var bot := BotPlayer.new()
 		bot.name = "Bot%d" % i
 		add_child(bot)
 		bot.setup(i, server)
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	server.start_game.call_deferred(seat_count)
+	if not _networked():
+		server.start_game.call_deferred(seat_count)
+	elif Net.is_host:
+		# L'hôte attend que chaque ami ait chargé la table avant de distribuer.
+		server.host_network(Net.seat_of_peer)
+		Net.when_all_ready.call_deferred(func(): server.start_game(seat_count))
+	else:
+		server.remote = true  # relais : demandes envoyées à l'hôte, annonces reçues de lui
+		Net.scene_ready.call_deferred()
 
 
 # Pénombre pour le fond du menu : lampe et ambiance baissées, pas de lumière de tour.
@@ -671,8 +692,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_try_slap()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_M and _game_over:
-			get_tree().change_scene_to_file("res://scenes/menu.tscn")
-		elif event.keycode == KEY_R and _game_over:
+			_back_to_menu()
+		elif event.keycode == KEY_R and _game_over and not _networked():
 			get_tree().reload_current_scene()
 
 
@@ -731,6 +752,13 @@ func _on_game_started(start_counts: Array) -> void:
 func _on_turn_started(player: int, duration: float) -> void:
 	_turn_player = player
 	_turn_left = duration
+	if player == local_seat and OS.has_environment("AUTOPLAY"):
+		# Pour les tests : le joueur local joue sa carte tout seul (et feinte une tape).
+		get_tree().create_timer(0.6).timeout.connect(func():
+			server.grab_card(local_seat)
+			server.request_play(local_seat)
+			server.release_card(local_seat)
+			server.request_slap(local_seat, Vector2(0.5, 0.5)))
 	if player != local_seat:
 		_drop_held_card()
 		# La main droite de l'ordinateur va chercher la carte sur son tas.
@@ -1340,16 +1368,23 @@ func _build_pause_menu() -> void:
 		column.add_child(button)
 	var input := PauseInput.new()
 	input.process_mode = Node.PROCESS_MODE_ALWAYS
-	input.on_escape = func(): _set_paused(not get_tree().paused)
+	input.on_escape = func(): _set_paused(not _pause_layer.visible)
 	add_child(input)
 
 
 func _set_paused(paused: bool) -> void:
-	get_tree().paused = paused
+	if not _networked():  # en réseau, la partie continue pour les autres : on affiche juste le menu
+		get_tree().paused = paused
 	_pause_layer.visible = paused
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if paused else Input.MOUSE_MODE_CAPTURED
 
 
 func _back_to_menu() -> void:
+	if _networked():
+		Net.leave()
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/menu.tscn")
+
+
+func _networked() -> bool:
+	return not demo_mode and Net.active

@@ -58,6 +58,12 @@ var turn_time := TURN_TIME
 var card_travel := CARD_TRAVEL
 var _start_clock := 0.0
 
+# Réseau. Chez un ami, ce nœud est un relais (remote) : il envoie ses demandes à l'hôte et
+# répète localement les annonces reçues. Chez l'hôte, il envoie chaque annonce aux amis.
+var remote := false
+var _seat_of_peer := {}       # hôte : identifiant réseau -> siège
+var _last_hand_sent := {}     # limite l'envoi des positions de main (par siège)
+
 var _clock := 0.0
 var _turn_left := 0.0
 var _pair_open := false       # taper est légal (paire visible, ou recouverte depuis peu)
@@ -115,6 +121,9 @@ func _process(delta: float) -> void:
 
 
 func request_play(p: int) -> void:
+	if remote:
+		_send_request("request_play", [])
+		return
 	if state != State.TURN or p != current_player or rules.count(p) == 0:
 		return
 	var card := rules.play(p)
@@ -148,6 +157,9 @@ func request_play(p: int) -> void:
 # du dessus (ou, pendant le délai de grâce, la carte du dessus de la paire recouverte)
 # ou une main déjà posée sur le tas. Sinon c'est une feinte : la main remonte.
 func request_slap(p: int, pos: Vector2) -> void:
+	if remote:
+		_send_request("request_slap", [pos])
+		return
 	_ensure_players()
 	if (state != State.TURN and state != State.SLAP) or p in _slap_order:
 		return
@@ -179,8 +191,11 @@ func request_slap(p: int, pos: Vector2) -> void:
 # doit taper dans les NERVOUS_GRACE secondes ; si elle ressort avant ou reste trop
 # longtemps sans taper, le joueur est nerveux.
 func update_hand(p: int, pos: Vector2) -> void:
+	if remote:
+		_send_hand(pos)
+		return
 	_ensure_players()
-	hand_moved.emit(p, pos)
+	_emit_hand(p, pos)
 	_hand_pos[p] = pos
 	var crossed := Table.intrusion(pos) > Table.LINE_TOLERANCE
 	if state == State.NERVOUS:
@@ -199,6 +214,9 @@ func update_hand(p: int, pos: Vector2) -> void:
 
 # Le joueur saisit sa carte (seulement pendant son tour) : il peut franchir la ligne en la jetant.
 func grab_card(p: int) -> void:
+	if remote:
+		_send_request("grab_card", [])
+		return
 	_ensure_players()
 	if state == State.TURN and p == current_player:
 		_holding[p] = true
@@ -207,6 +225,9 @@ func grab_card(p: int) -> void:
 
 # Le joueur lâche sa carte : si sa main est dans le cercle, il a THROW_EXIT_GRACE secondes pour en sortir.
 func release_card(p: int) -> void:
+	if remote:
+		_send_request("release_card", [])
+		return
 	_ensure_players()
 	if not _holding[p]:
 		return
@@ -400,3 +421,93 @@ func _update_speed() -> void:
 
 func speed_factor() -> float:
 	return pow(SPEED_STEP, speed_level)
+
+
+# --- Réseau ---------------------------------------------------------------------------
+
+const HAND_SEND_INTERVAL := 0.05  # positions de main : 20 envois par seconde au plus
+const NET_REQUESTS := ["request_play", "request_slap", "grab_card", "release_card"]
+
+
+# Hôte : chaque annonce est aussi envoyée à tous les amis connectés.
+func host_network(seat_of_peer: Dictionary) -> void:
+	_seat_of_peer = seat_of_peer
+	game_started.connect(func(a): _broadcast("game_started", [a]))
+	turn_started.connect(func(a, b): _broadcast("turn_started", [a, b]))
+	card_played.connect(func(a, b, c, d, e): _broadcast("card_played", [a, b, c, d, e]))
+	slap_registered.connect(func(a, b, c): _broadcast("slap_registered", [a, b, c]))
+	slap_missed.connect(func(a, b): _broadcast("slap_missed", [a, b]))
+	card_ejected.connect(func(a, b): _broadcast("card_ejected", [a, b]))
+	pile_taken.connect(func(a, b): _broadcast("pile_taken", [a, b]))
+	slap_judged.connect(func(a, b, c): _broadcast("slap_judged", [a, b, c]))
+	player_nervous.connect(func(a, b): _broadcast("player_nervous", [a, b]))
+	speed_changed.connect(func(a): _broadcast("speed_changed", [a]))
+	game_over.connect(func(a): _broadcast("game_over", [a]))
+
+
+func _broadcast(event: String, args: Array) -> void:
+	if _networked():
+		_net_event.rpc(event, args)
+
+
+# Ami : annonce reçue de l'hôte, répétée localement pour l'affichage.
+@rpc("authority", "call_remote", "reliable")
+func _net_event(event: String, args: Array) -> void:
+	if OS.has_environment("NET_LOG"):
+		print("[ami] reçu : ", event, " ", args)
+	if event == "speed_changed":
+		speed_level = args[0]
+		turn_time = TURN_TIME * speed_factor()
+		card_travel = CARD_TRAVEL * speed_factor()
+	emit_signal.callv([event] + args)
+
+
+# Ami : demande envoyée à l'hôte (le siège est déduit de la connexion par l'hôte).
+func _send_request(method: String, args: Array) -> void:
+	_net_request.rpc_id(1, method, args)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _net_request(method: String, args: Array) -> void:
+	if OS.has_environment("NET_LOG"):
+		print("[hôte] demande de ", multiplayer.get_remote_sender_id(), " : ", method, " ", args)
+	var seat: int = _seat_of_peer.get(multiplayer.get_remote_sender_id(), -1)
+	if seat >= 0 and method in NET_REQUESTS:
+		callv(method, [seat] + args)
+
+
+# Positions de main : envoi fréquent, perte tolérée (la suivante corrige).
+func _send_hand(pos: Vector2) -> void:
+	if _hand_throttled(-1):
+		return
+	_net_hand.rpc_id(1, pos)
+
+
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func _net_hand(pos: Vector2) -> void:
+	var seat: int = _seat_of_peer.get(multiplayer.get_remote_sender_id(), -1)
+	if seat >= 0:
+		update_hand(seat, pos)
+
+
+func _emit_hand(p: int, pos: Vector2) -> void:
+	hand_moved.emit(p, pos)
+	if _networked() and not remote and not _hand_throttled(p):
+		_net_hand_moved.rpc(p, pos)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _net_hand_moved(p: int, pos: Vector2) -> void:
+	hand_moved.emit(p, pos)
+
+
+func _hand_throttled(key: int) -> bool:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - float(_last_hand_sent.get(key, -1.0)) < HAND_SEND_INTERVAL:
+		return true
+	_last_hand_sent[key] = now
+	return false
+
+
+func _networked() -> bool:
+	return multiplayer.has_multiplayer_peer() and not multiplayer.multiplayer_peer is OfflineMultiplayerPeer
