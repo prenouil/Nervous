@@ -16,7 +16,7 @@ signal slap_registered(player: int, order: int, pos: Vector2)  # tape qui touche
 signal slap_missed(player: int, pos: Vector2)                # tape à côté (feinte) : sans effet, la main remonte
 signal card_ejected(player: int, card: int)  # carte qui recouvrait la paire, renvoyée sous le tas de son propriétaire
 signal pile_taken(shares: Dictionary, reason: String)  # { joueur: cartes }, reason : "slap", "false_slap", "nervous" ou "timeout"
-signal slap_judged(shares: Dictionary, reason: String, highlighted: int)  # verdict annoncé avant le ramassage ; highlighted : nombre de cartes du dessus en cause
+signal slap_judged(shares: Dictionary, reason: String, highlighted: int, order: Array)  # verdict annoncé avant le ramassage ; highlighted : nombre de cartes du dessus en cause ; order : ordre réel des tapes (corrigé de la latence)
 signal hand_moved(player: int, pos: Vector2)     # position de la main droite d'un joueur, pour l'afficher chez les autres
 signal player_nervous(player: int, order: int)  # main restée trop loin dans le cercle : NERVOUS !
 signal speed_changed(level: int)  # la partie s'accélère (au début d'une nouvelle manche)
@@ -76,6 +76,12 @@ var _slap_valid := false
 var _slap_left := 0.0
 var _slap_order: Array[int] = []
 var _slap_positions: Array[Vector2] = []  # mains posées sur le tas
+var _slap_times: Array[float] = []        # heure de chaque tape, corrigée de la latence
+var _closed_pair_time := -1.0             # dernière paire fermée (pour les tapes d'amis en retard)
+var _closed_center_size := 0
+var _closed_covered := false
+var _closed_cover_player := -1
+var latency_override := {}                # tests : siège -> latence simulée (secondes)
 var _center_layout: Array[Vector3] = []   # pour chaque carte du centre : x, z, orientation
 var _cross_start: Array[float] = []       # instant où la main a franchi la ligne du cercle (-1 : pas franchie)
 var _hand_pos: Array[Vector2] = []        # dernière position connue de la main droite
@@ -167,12 +173,23 @@ func request_slap(p: int, pos: Vector2) -> void:
 	if not _hits_pile(pos):
 		slap_missed.emit(p, pos)
 		return
+	# Heure « réelle » de la tape : un ami à distance a vu la carte et tapé plus tôt
+	# que l'arrivée de sa demande (un aller-retour réseau, plafonné).
+	var slap_time := _clock - latency(p)
 	if state == State.TURN:
+		# Paire recouverte dont le délai de grâce vient d'expirer, mais tape partie à temps.
+		var late_but_valid := not _pair_open and _closed_pair_time >= 0.0 \
+			and slap_time <= _closed_pair_time and rules.center.size() == _closed_center_size
+		if late_but_valid:
+			_pair_open = true
+			_covered = _closed_covered
+			_cover_player = _closed_cover_player
 		# Première tape : la main bloque le tas, plus personne ne peut jouer.
 		state = State.SLAP
 		_clear_crossings()
 		_slap_valid = _pair_open
 		_slap_order.clear()
+		_slap_times.clear()
 		_slap_positions.clear()
 		_slap_left = SLAP_WINDOW
 		if _pair_open and _covered:
@@ -181,6 +198,7 @@ func request_slap(p: int, pos: Vector2) -> void:
 			_center_layout.pop_back()
 		_pair_open = false
 	_slap_order.append(p)
+	_slap_times.append(slap_time)
 	_slap_positions.append(pos)
 	slap_registered.emit(p, _slap_order.size(), pos)
 	if _slap_order.size() == rules.num_players:
@@ -260,7 +278,7 @@ func _resolve_nervous() -> void:
 	_center_layout.clear()
 	var shares := rules.give_center_to(losers, rng)
 	var slappers := 0
-	slap_judged.emit(shares, "nervous", 0)
+	slap_judged.emit(shares, "nervous", 0, [])
 	_after(reveal_time(slappers, "nervous"), func():
 		pile_taken.emit(shares, "nervous")
 		_after(RESOLVE_DELAY, func(): _continue_with(losers[0])))
@@ -315,6 +333,11 @@ func _hand_touches_card(pos: Vector2, card: Vector3) -> bool:
 
 
 func _close_pair() -> void:
+	# On garde de quoi accepter une tape d'ami partie juste avant la fermeture.
+	_closed_pair_time = _clock
+	_closed_center_size = rules.center.size()
+	_closed_covered = _covered
+	_closed_cover_player = _cover_player
 	_pair_open = false
 	slap_window_closed.emit()
 
@@ -323,7 +346,9 @@ func _start_turn(p: int) -> void:
 	_ensure_players()
 	state = State.TURN
 	current_player = p
-	_turn_left = turn_time
+	# Un ami à distance reçoit son tour en retard et sa carte arrive en retard : on le
+	# compense pour que le réseau ne lui fasse pas perdre son tour.
+	_turn_left = turn_time + latency(p)
 	turn_started.emit(p, turn_time)
 
 
@@ -334,24 +359,28 @@ func _resolve_slap() -> void:
 	state = State.RESOLVING
 	_clear_crossings()
 	_pair_open = false
+	_closed_pair_time = -1.0
+	# Ordre des tapes corrigé de la latence de chacun (peut différer de l'ordre d'arrivée).
+	var order := _corrected_slap_order()
 	var losers: Array[int] = []
 	var reason := "slap"
 	if not _slap_valid:
 		reason = "false_slap"
-		losers = _slap_order.duplicate()
-	elif _slap_order.size() == rules.num_players:
-		losers.append(_slap_order[-1])
+		losers = order.duplicate()
+	elif order.size() == rules.num_players:
+		losers.append(order[-1])
 	else:
 		for i in rules.num_players:
 			var p := (_pair_player + i) % rules.num_players
-			if not p in _slap_order:
+			if not p in order:
 				losers.append(p)
-	var slappers := _slap_order.size()
+	var slappers := order.size()
 	_slap_order.clear()
+	_slap_times.clear()
 	_slap_positions.clear()
 	_center_layout.clear()
 	var shares := rules.give_center_to(losers, rng)
-	slap_judged.emit(shares, reason, 2 if _slap_valid else 1)
+	slap_judged.emit(shares, reason, 2 if _slap_valid else 1, order)
 	_after(reveal_time(slappers, reason), func():
 		pile_taken.emit(shares, reason)
 		_after(RESOLVE_DELAY, func(): _continue_with(losers[0])))
@@ -426,6 +455,7 @@ func speed_factor() -> float:
 # --- Réseau ---------------------------------------------------------------------------
 
 const HAND_SEND_INTERVAL := 0.05  # positions de main : 20 envois par seconde au plus
+const MAX_LATENCY_COMPENSATION := 0.25  # on ne rattrape jamais plus de 250 ms
 const NET_REQUESTS := ["request_play", "request_slap", "grab_card", "release_card"]
 
 
@@ -439,7 +469,7 @@ func host_network(seat_of_peer: Dictionary) -> void:
 	slap_missed.connect(func(a, b): _broadcast("slap_missed", [a, b]))
 	card_ejected.connect(func(a, b): _broadcast("card_ejected", [a, b]))
 	pile_taken.connect(func(a, b): _broadcast("pile_taken", [a, b]))
-	slap_judged.connect(func(a, b, c): _broadcast("slap_judged", [a, b, c]))
+	slap_judged.connect(func(a, b, c, d): _broadcast("slap_judged", [a, b, c, d]))
 	player_nervous.connect(func(a, b): _broadcast("player_nervous", [a, b]))
 	speed_changed.connect(func(a): _broadcast("speed_changed", [a]))
 	game_over.connect(func(a): _broadcast("game_over", [a]))
@@ -511,3 +541,29 @@ func _hand_throttled(key: int) -> bool:
 
 func _networked() -> bool:
 	return multiplayer.has_multiplayer_peer() and not multiplayer.multiplayer_peer is OfflineMultiplayerPeer
+
+
+# Aller-retour réseau d'un joueur (0 pour l'hôte et les ordinateurs), plafonné.
+func latency(seat: int) -> float:
+	if latency_override.has(seat):
+		return minf(latency_override[seat], MAX_LATENCY_COMPENSATION)
+	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if enet == null or remote:
+		return 0.0
+	for peer_id in _seat_of_peer:
+		if _seat_of_peer[peer_id] == seat:
+			var connection := enet.get_peer(peer_id)
+			if connection == null:
+				return 0.0
+			var rtt_ms := connection.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME)
+			return minf(rtt_ms / 1000.0, MAX_LATENCY_COMPENSATION)
+	return 0.0
+
+
+func _corrected_slap_order() -> Array[int]:
+	var indices := range(_slap_order.size())
+	indices.sort_custom(func(a, b): return _slap_times[a] < _slap_times[b])
+	var order: Array[int] = []
+	for i in indices:
+		order.append(_slap_order[i])
+	return order

@@ -153,7 +153,10 @@ Décision : parties **entre amis** d'abord, avec un **joueur qui héberge** la p
 Étapes prévues :
 1. ✅ Afficher la table depuis n'importe quel siège (le joueur local n'est plus forcément en bas).
 2. ✅ Brancher le réseau sur le serveur existant (tests avec deux instances du jeu sur un même PC : `tools/test_multijoueur.bat`).
-3. Envoyer les positions de mains en continu, et **corriger la latence des tapes** (équité : quelques dizaines de ms comptent).
+3. ✅ Envoyer les positions de mains en continu (20 fois par seconde), et **corriger la latence des tapes** (équité : quelques dizaines de ms comptent).
+   - L'hôte mesure l'aller-retour réseau de chaque ami. L'heure de ses tapes est avancée d'autant (**250 ms au plus**) : c'est cet ordre corrigé qui décide qui a tapé en dernier ; au verdict, les mains se réempilent dans le bon ordre.
+   - Une tape d'ami partie pendant le délai de grâce d'une paire recouverte, mais arrivée juste après, est acceptée.
+   - Le temps pour jouer sa carte est prolongé de l'aller-retour réseau de l'ami.
 4. Écran de salon (« Jouer à plusieurs ») : héberger / rejoindre par adresse IP (pas de réseau local), joueurs présents, sièges vides complétés par des ordinateurs.
    - **Notice et vérifications pour l'hôte** : port libre sur le PC, ouverture automatique du port sur la box (UPnP), détection d'une adresse IP partagée (CGNAT, hébergement impossible), adresse publique à copier, rappel du pare-feu Windows, marche à suivre manuelle si l'ouverture automatique échoue.
    - Limite : on ne peut pas garantir depuis le PC de l'hôte qu'un ami pourra se connecter ; la connexion du premier ami fait office de test (le salon l'affiche clairement).

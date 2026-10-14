@@ -161,6 +161,42 @@ func _run() -> void:
 	server._continue_with(2)
 	_expect(levels == [1, 2] and is_equal_approx(server.turn_time, 4.05), "niveau 2 : encore -10 %%")
 
+	# Latence réseau : temps réel (pas d'accéléré) pour mesurer des écarts de quelques centièmes.
+	Engine.time_scale = 1.0
+
+	# 13. Le joueur 2 (200 ms de latence) arrive en dernier, mais a tapé avant le joueur 1.
+	_new_server([[1, 3], [14, 3], [8, 9], [10, 11]])
+	server.latency_override = {2: 0.2}
+	var judged_order := []
+	server.slap_judged.connect(func(_s, _r, _h, o): judged_order.assign(o))
+	_play_from(0)
+	server.request_play(1)            # paire
+	server.request_slap(0, _top())
+	server.request_slap(3, _top())
+	await _wait(0.05)
+	server.request_slap(1, _top())
+	await _wait(0.1)
+	server.request_slap(2, _top())    # arrive en dernier, mais compte 200 ms plus tôt
+	_expect(judged_order[0] == 2 and judged_order[-1] == 1, "ordre corrigé de la latence : %s" % [judged_order])
+	await _wait(GameServer.reveal_time(4) + 0.2)
+	_expect(last_take.get("shares", {}).keys() == [1], "le vrai dernier (joueur 1) ramasse : %s" % [last_take])
+
+	# 14. Temps pour jouer prolongé de la latence d'un ami.
+	_new_server([[1, 3], [14, 3], [8, 9], [10, 11]])
+	server.latency_override = {1: 0.2}
+	server._start_turn(1)
+	_expect(is_equal_approx(server._turn_left, GameServer.TURN_TIME + 0.2), "tour prolongé de la latence : %.2f" % server._turn_left)
+
+	# 15. Paire recouverte : tape d'un ami arrivée juste après la fin du délai, mais partie à temps.
+	_new_server([[1, 3], [14, 3], [8, 9], [10, 11]])
+	server.latency_override = {3: 0.25}
+	_play_from(0)
+	server.request_play(1)            # paire
+	server.request_play(2)            # recouverte
+	await _wait(server.card_travel + GameServer.COVER_GRACE + 0.1)
+	server.request_slap(3, _top())
+	_expect(ejected == [[2, 8]] and server._slap_valid, "tape partie à temps malgré le réseau : valide (%s)" % [ejected])
+
 	print("OK" if failures == 0 else "%d ÉCHEC(S)" % failures)
 	quit(failures)
 

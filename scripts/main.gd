@@ -843,12 +843,16 @@ func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
 # Verdict : on laisse d'abord le tremblement s'éteindre (on voit bien qui a tapé, où et
 # dans quel ordre). Ensuite seulement : le message, les cartes en cause qui clignotent en
 # rouge, et les mains qui se retirent lentement une par une (la dernière posée d'abord).
-func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int) -> void:
+func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int, order: Array) -> void:
 	_turn_player = -1
 	var calm := create_tween()
 	var settle := GameServer.settle_time(reason)
 	calm.tween_property(self, "_trauma", 0.0, settle).set_ease(Tween.EASE_OUT)
-	var sequence := _slap_sequence.duplicate()
+	# Ordre réel des tapes (corrigé de la latence réseau) : s'il diffère de l'ordre
+	# d'arrivée, les mains se réempilent tout de suite dans le bon ordre.
+	var sequence: Array = order if not order.is_empty() else _slap_sequence.duplicate()
+	if sequence != _slap_sequence:
+		_restack_hands(sequence)
 	_slap_sequence.clear()
 	var reveal := create_tween()
 	reveal.tween_interval(settle)
@@ -868,6 +872,14 @@ func _on_slap_judged(shares: Dictionary, reason: String, highlighted: int) -> vo
 			ht.tween_property(hand, "global_position", _rest_pos(p), 0.35).set_trans(Tween.TRANS_SINE)
 			ht.tween_callback(func(): hand_locked[p] = false)
 			k += 1)
+
+
+func _restack_hands(sequence: Array) -> void:
+	var base := center_cards.size() * CARD_T + 0.002
+	for k in sequence.size():
+		var hand := right_hands[sequence[k]]
+		var tw := hand.create_tween()
+		tw.tween_property(hand, "global_position:y", base + k * 0.026, 0.15)
 
 
 # Cadre rouge qui pulse autour de la carte, et carte teintée de rouge.
