@@ -145,3 +145,14 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 - **Jouer à plusieurs** (grisé, à venir), **Options** (affichage fenêtré ou plein écran, mémorisé ; « Retour » ramène au menu), **Quitter**.
 - En jeu, **Échap** met en pause : **Continuer** ou **Revenir au menu**.
 - En fin de partie : **R** pour rejouer, **M** pour revenir au menu.
+
+## Multijoueur (à venir)
+
+Décision : parties **entre amis** d'abord, avec un **joueur qui héberge** la partie (son jeu fait office de serveur, les autres s'y connectent). Plus tard, si besoin : passage par une plateforme (Steam ou Epic Online Services) pour les salons, invitations et relais réseau. Un serveur dédié seulement si le jeu devient public.
+
+Étapes prévues :
+1. Afficher la table depuis n'importe quel siège (le joueur local n'est plus forcément en bas).
+2. Brancher le réseau sur le serveur existant (tests avec deux instances du jeu sur un même PC).
+3. Envoyer les positions de mains en continu, et **corriger la latence des tapes** (équité : quelques dizaines de ms comptent).
+4. Écran de salon (« Jouer à plusieurs ») : héberger / rejoindre, joueurs présents, sièges vides complétés par des ordinateurs.
+5. Déconnexions (un joueur qui part est remplacé par un ordinateur), puis tests entre deux PC.
