@@ -40,6 +40,7 @@ const RESOLVE_DELAY := 1.9    # pause après un ramassage, le temps de l'animati
 const NERVOUS_GRACE := 1.0   # main qui franchit la ligne du cercle : temps pour taper
 const THROW_EXIT_GRACE := 2.0  # carte lâchée dans le cercle (ou nouvelle manche) : temps pour en ressortir tranquillement
 const NERVOUS_CONTAGION := 0.5  # après un premier nerveux, temps pendant lequel d'autres peuvent l'être aussi
+const NERVOUS_SUSPEND := 1.5   # après une tape (même une feinte), plus de nervosité pour personne pendant ce temps
 const NERVOUS_SHOW := 1.2    # durée de l'annonce « NERVOUS !!! » avant le verdict
 const PILE_SPREAD_MIN := 0.03 # dispersion des cartes au centre : rayon au début...
 const PILE_SPREAD_MAX := 0.12 # ...et rayon maximal, atteint après quelques cartes
@@ -90,6 +91,7 @@ var _holding: Array[bool] = []            # le joueur tient sa carte, prêt à l
 var _throw_exit: Array[bool] = []         # carte lâchée dans le cercle : sortir de la ligne est permis
 var _nervous: Array[int] = []
 var _nervous_time := 0.0
+var _suspend_until := -1.0     # nervosité suspendue jusqu'à cet instant (-1 : pas de suspension)
 
 
 func start_game(players := 4) -> void:
@@ -111,6 +113,9 @@ func _process(delta: float) -> void:
 			_slap_valid = true
 			_resolve_slap()
 			return
+		if _suspend_until >= 0.0 and _clock >= _suspend_until:
+			_suspend_until = -1.0
+			_grant_exit_grace()  # fin de la suspension : les mains encore dans le cercle ont le temps de sortir
 		for p in _cross_start.size():
 			var grace := THROW_EXIT_GRACE if _throw_exit[p] else NERVOUS_GRACE
 			if _cross_start[p] >= 0.0 and _clock - _cross_start[p] > grace:
@@ -175,6 +180,7 @@ func request_slap(p: int, pos: Vector2) -> void:
 	_cross_start[p] = -1.0  # avoir tapé (même à côté) dispense d'être nerveux
 	if not _hits_pile(pos):
 		slap_missed.emit(p, pos)
+		_suspend_nervous()  # une feinte suspend la nervosité pour tout le monde
 		return
 	# Heure « réelle » de la tape : un ami à distance a vu la carte et tapé plus tôt
 	# que l'arrivée de sa demande (un aller-retour réseau, plafonné).
@@ -222,7 +228,7 @@ func update_hand(p: int, pos: Vector2) -> void:
 	if state == State.NERVOUS:
 		if crossed and _clock - _nervous_time <= NERVOUS_CONTAGION:
 			_declare_nervous(p)
-	elif state == State.TURN and not _holding[p]:  # en train de jeter sa carte : franchir la ligne est permis
+	elif state == State.TURN and not _holding[p] and _suspend_until < 0.0:  # carte tenue, ou nervosité suspendue après une tape : permis
 		if crossed and _cross_start[p] < 0.0:
 			_cross_start[p] = _clock
 		elif not crossed and _cross_start[p] >= 0.0:
@@ -592,3 +598,12 @@ func _grant_exit_grace() -> void:
 		if Table.intrusion(_hand_pos[p]) > Table.LINE_TOLERANCE:
 			_throw_exit[p] = true
 			_cross_start[p] = _clock
+
+
+# Quelqu'un vient de taper : personne ne peut être nerveux pendant NERVOUS_SUSPEND secondes
+# (ceux qui ont avancé la main par réflexe peuvent la retirer sans risque).
+func _suspend_nervous() -> void:
+	_suspend_until = _clock + NERVOUS_SUSPEND
+	for p in _cross_start.size():
+		_cross_start[p] = -1.0
+		_throw_exit[p] = false

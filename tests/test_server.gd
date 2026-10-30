@@ -208,6 +208,20 @@ func _run() -> void:
 	await _wait(0.3)
 	_expect(nervous.is_empty(), "nouvelle manche : main ressortie dans les temps, pas nerveux (%s)" % [nervous])
 
+	# 17. Une feinte suspend la nervosité de tout le monde : on peut retirer sa main sans risque.
+	_new_server([[1, 3, 5], [14, 3, 6], [8, 9, 7], [10, 11, 12]])
+	nervous = []
+	server.player_nervous.connect(func(p, _o): nervous.append(p))
+	_play_from(0)
+	server.update_hand(1, inside)              # réflexe : la main du joueur 1 avance…
+	server.request_slap(2, Vector2(0.5, 0.5))  # … le joueur 2 a feinté à côté
+	server.update_hand(1, outside)             # le joueur 1 retire sa main
+	server.update_hand(3, inside)              # le joueur 3 avance aussi, pendant la suspension
+	await _wait(GameServer.NERVOUS_SUSPEND + 0.5)
+	server.update_hand(3, outside)             # et sort tranquillement après
+	await _wait(0.3)
+	_expect(nervous.is_empty(), "après une feinte, personne n'est nerveux (%s)" % [nervous])
+
 	print("OK" if failures == 0 else "%d ÉCHEC(S)" % failures)
 	quit(failures)
 

@@ -101,6 +101,7 @@ var hud_nervous: Label
 var hud_speed: Label
 var _pause_layer: CanvasLayer
 var _tutorial: CanvasLayer
+var _new_round := false  # un ramassage vient d'avoir lieu : la prochaine manche commence
 
 var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
@@ -759,6 +760,7 @@ func _try_slap() -> void:
 # --- Réactions aux annonces du serveur ---------------------------------------------
 
 func _on_game_started(start_counts: Array) -> void:
+	_pull_hand_out()
 	if OS.has_environment("NET_LOG"):
 		print("[table] la partie démarre à %.1f s" % (Time.get_ticks_msec() / 1000.0))
 	if _tutorial != null:  # tout le monde a validé : on joue
@@ -772,6 +774,9 @@ func _on_game_started(start_counts: Array) -> void:
 
 
 func _on_turn_started(player: int, duration: float) -> void:
+	if _new_round:  # début de manche (après un ramassage) : ta main ressort de la zone
+		_new_round = false
+		_pull_hand_out()
 	_turn_player = player
 	_turn_left = duration
 	if player == local_seat and OS.has_environment("AUTOPLAY"):
@@ -1067,9 +1072,7 @@ func _on_pile_taken(shares: Dictionary, reason: String) -> void:
 	_turn_player = -1
 	_drop_held_card()
 	_clear_nervous_hands()
-	# Ta main ressort du cercle, pour ne pas être de nouveau nerveux au tour suivant.
-	var out := Table.outside_circle(Vector2(_hand_target.x, _hand_target.z))
-	_hand_target = Vector3(out.x, HAND_Y, out.y)
+	_new_round = true
 	var takers: Array = shares.keys()
 	if reason == "timeout":  # pour les tapes, le verdict a déjà été annoncé
 		_show_message(_pile_message(shares, reason))
@@ -1522,3 +1525,16 @@ func _tutorial_label(text: String, size: int, color: Color, align: HorizontalAli
 	label.add_theme_color_override("font_outline_color", Color.BLACK)
 	label.add_theme_constant_override("outline_size", 6)
 	return label
+
+
+# Début de partie ou de manche : si ta main est dans la zone de nervosité (même la marge
+# d'avertissement), elle est ramenée juste à l'extérieur, pour ne jamais perdre en démarrant.
+func _pull_hand_out() -> void:
+	var hand := right_hands[local_seat]
+	var pos := Vector2(hand.global_position.x, hand.global_position.z)
+	if Table.intrusion(pos) <= 0.0:
+		return
+	var out := Table.outside_circle(pos)
+	_hand_target = Vector3(out.x, HAND_Y, out.y)
+	if not hand_locked[local_seat]:
+		hand.global_position = _hand_target  # tout de suite, pas en glissant
