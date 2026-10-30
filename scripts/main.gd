@@ -63,6 +63,8 @@ const TABLE_LIMITS := Rect2(-0.6, -1.0, 1.2, 0.95)  # zone accessible à la main
 static var bot_count := DEFAULT_BOTS
 # Siège du joueur local en solo (0 = en bas ; autre valeur utile pour tester l'affichage).
 static var local_seat_choice := 0
+# Tests : démarre sans le tutoriel.
+static var skip_tutorial := false
 
 # Mode « attente » : la table à 4 joueurs, dans la pénombre, sert de fond au menu.
 var demo_mode := false
@@ -96,6 +98,7 @@ var _bot_hand_goal: Array[Vector3] = []  # position annoncée par le serveur pou
 var hud_nervous: Label
 var hud_speed: Label
 var _pause_layer: CanvasLayer
+var _tutorial: CanvasLayer
 
 var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
@@ -204,17 +207,23 @@ func _ready() -> void:
 		add_child(bot)
 		bot.setup(i, server)
 
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# Ce qui lance la partie une fois le tutoriel validé. En réseau, l'hôte attend que
+	# chaque ami ait chargé la table ET validé le tutoriel avant de distribuer.
+	var start: Callable
 	if not _networked():
-		server.start_game.call_deferred(seat_count)
+		start = func(): server.start_game(seat_count)
 	elif Net.is_host:
-		# L'hôte attend que chaque ami ait chargé la table avant de distribuer.
 		server.host_network(Net.seat_of_peer)
 		Net.player_replaced.connect(_replace_by_bot)
-		Net.when_all_ready.call_deferred(func(): server.start_game(seat_count))
+		start = func(): Net.when_all_ready(func(): server.start_game(seat_count))
 	else:
 		server.remote = true  # relais : demandes envoyées à l'hôte, annonces reçues de lui
-		Net.scene_ready.call_deferred()
+		start = Net.scene_ready
+	if skip_tutorial or OS.has_environment("SKIP_TUTO") or OS.has_environment("AUTOPLAY"):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		start.call_deferred()
+	else:
+		_show_tutorial(start)
 	if OS.has_environment("AUTOLEAVE"):  # tests : quitte la partie au bout de N secondes
 		get_tree().create_timer(float(OS.get_environment("AUTOLEAVE"))).timeout.connect(_back_to_menu)
 
@@ -683,7 +692,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_move_hand_target(event.relative)
-	elif event is InputEventMouseButton and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	elif event is InputEventMouseButton and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and _tutorial == null:
 		if event.pressed:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED  # un clic reprend le contrôle de la main
 	elif event is InputEventMouseButton:
@@ -748,6 +757,13 @@ func _try_slap() -> void:
 # --- Réactions aux annonces du serveur ---------------------------------------------
 
 func _on_game_started(start_counts: Array) -> void:
+	if OS.has_environment("NET_LOG"):
+		print("[table] la partie démarre à %.1f s" % (Time.get_ticks_msec() / 1000.0))
+	if _tutorial != null:  # tout le monde a validé : on joue
+		_tutorial.queue_free()
+		_tutorial = null
+		if not _pause_layer.visible:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	for p in seat_count:
 		counts[p] = start_counts[p]
 		_update_stack(p)
@@ -1422,3 +1438,84 @@ func _replace_by_bot(seat: int, _name: String) -> void:
 func _on_player_replaced(seat: int) -> void:
 	_show_message("%s est parti : un ordinateur prend sa place." % player_names[seat], 3.0)
 	player_names[seat] += " (ordi)"
+
+
+# --- Tutoriel ---------------------------------------------------------------------------
+
+const TUTORIAL_LINES := [
+	"Quand c'est à toi, retourne une carte.",
+	"Sur le tas au centre, si 2 cartes de suite sont de même valeur, ou sont 2 têtes (n'importe lesquelles), il faut taper, mais pas en dernier ! Sinon tu ramasses toutes les cartes.",
+	"Si tu es le dernier avec des cartes, tu as perdu !",
+	"Attention, ne franchis pas le cercle, à part pour taper le tas, sinon tu ramasses !",
+]
+
+
+# Au début de la partie : rappel des règles, et « Valider ». La partie démarre quand
+# tous les joueurs ont validé.
+func _show_tutorial(on_validate: Callable) -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_tutorial = CanvasLayer.new()
+	_tutorial.layer = 5
+	add_child(_tutorial)
+	var shade := ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.55)
+	_tutorial.add_child(shade)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var center := CenterContainer.new()
+	_tutorial.add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var panel := PanelContainer.new()
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.08, 0.06, 0.08, 0.92)
+	panel_style.border_color = WARNING_RED
+	panel_style.set_border_width_all(4)
+	panel_style.set_corner_radius_all(18)
+	panel_style.set_content_margin_all(40)
+	panel.add_theme_stylebox_override("panel", panel_style)
+	center.add_child(panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 18)
+	panel.add_child(column)
+	column.add_child(_tutorial_label("Comment jouer", 54, WARNING_RED, HORIZONTAL_ALIGNMENT_CENTER))
+	for line in TUTORIAL_LINES:
+		column.add_child(_tutorial_label("•  " + line, 26, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT))
+	column.add_child(_tutorial_label("BON JEU !", 46, Color(1.0, 0.75, 0.2), HORIZONTAL_ALIGNMENT_CENTER))
+	var waiting := _tutorial_label("", 22, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
+	var button := Button.new()
+	button.text = "Valider"
+	button.focus_mode = Control.FOCUS_NONE
+	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	button.custom_minimum_size.x = 260
+	button.add_theme_font_size_override("font_size", 36)
+	button.add_theme_color_override("font_color", Color.WHITE)
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	for state in [["normal", WARNING_RED], ["hover", WARNING_RED.lightened(0.2)], ["pressed", WARNING_RED.darkened(0.3)], ["disabled", Color(0.3, 0.3, 0.3)]]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = state[1]
+		style.set_corner_radius_all(14)
+		style.set_content_margin_all(12)
+		style.border_color = Color(1, 1, 1, 0.85)
+		style.set_border_width_all(3)
+		button.add_theme_stylebox_override(state[0], style)
+	button.pressed.connect(func():
+		button.disabled = true
+		if _networked():
+			waiting.text = "En attente des autres joueurs…"
+		on_validate.call())
+	column.add_child(button)
+	column.add_child(waiting)
+	if OS.has_environment("AUTOVALIDATE"):  # tests : valide tout seul au bout de N secondes
+		get_tree().create_timer(float(OS.get_environment("AUTOVALIDATE"))).timeout.connect(button.pressed.emit)
+
+
+func _tutorial_label(text: String, size: int, color: Color, align: HorizontalAlignment) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = align
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.custom_minimum_size.x = 900
+	label.add_theme_font_size_override("font_size", size)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", 6)
+	return label

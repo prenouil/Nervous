@@ -7,12 +7,14 @@ const MAIN_SCENE := "res://scenes/main.tscn"
 const MIN_BOTS := 1
 const MAX_BOTS := 5
 const TITLE_RED := Color(0.9, 0.1, 0.1)
+const OFF_GREY := Color(0.22, 0.22, 0.24)  # option non choisie
 
 var _bot_label: Label
 var _bot_suffix: Label
 var _main_screen: VBoxContainer
 var _options_screen: VBoxContainer
-var _display_button: Button
+var _windowed_button: Button
+var _fullscreen_button: Button
 var _lobby: VBoxContainer
 var _shade: ColorRect
 
@@ -96,9 +98,12 @@ func _build_options_screen() -> VBoxContainer:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 20)
 	row.add_child(_label("Affichage", 40))
-	_display_button = _solid_button("", 36, _toggle_fullscreen)
-	_display_button.custom_minimum_size.x = 300
-	row.add_child(_display_button)
+	# Les deux choix côte à côte ; celui qui est actif est en rouge.
+	_windowed_button = _solid_button("Fenêtré", 36, func(): _set_display(false))
+	_fullscreen_button = _solid_button("Plein écran", 36, func(): _set_display(true))
+	for button in [_windowed_button, _fullscreen_button]:
+		button.custom_minimum_size.x = 260
+		row.add_child(button)
 	column.add_child(row)
 	column.add_child(_spacer(20))
 	column.add_child(_menu_entry(_button("Retour", 40, func(): _show_options(false)), false))
@@ -111,13 +116,14 @@ func _show_options(show: bool) -> void:
 	_options_screen.visible = show
 
 
-func _toggle_fullscreen() -> void:
-	Settings.set_fullscreen(not Settings.fullscreen)
+func _set_display(fullscreen: bool) -> void:
+	Settings.set_fullscreen(fullscreen)
 	_refresh_display_button()
 
 
 func _refresh_display_button() -> void:
-	_display_button.text = "Plein écran" if Settings.fullscreen else "Fenêtré"
+	_style_button(_fullscreen_button, TITLE_RED if Settings.fullscreen else OFF_GREY, Settings.fullscreen)
+	_style_button(_windowed_button, OFF_GREY if Settings.fullscreen else TITLE_RED, not Settings.fullscreen)
 
 
 func _change_bots(step: int) -> void:
@@ -191,21 +197,28 @@ func _solid_button(text: String, size: int, action: Callable) -> Button:
 	button.add_theme_color_override("font_color", Color.WHITE)
 	button.add_theme_color_override("font_hover_color", Color.WHITE)
 	button.add_theme_color_override("font_pressed_color", Color(1, 1, 1, 0.8))
-	for state in [["normal", TITLE_RED], ["hover", TITLE_RED.lightened(0.2)], ["pressed", TITLE_RED.darkened(0.3)]]:
+	_style_button(button, TITLE_RED, true)
+	button.pressed.connect(action)
+	return button
+
+
+# Habille un bouton plein : couleur de fond, plus claire au survol, plus sombre au clic.
+# Un bouton inactif (option non choisie) a une bordure et un texte atténués.
+func _style_button(button: Button, color: Color, active: bool) -> void:
+	button.add_theme_color_override("font_color", Color.WHITE if active else Color(1, 1, 1, 0.55))
+	for state in [["normal", color], ["hover", color.lightened(0.2)], ["pressed", color.darkened(0.3)]]:
 		var style := StyleBoxFlat.new()
 		style.bg_color = state[1]
 		style.set_corner_radius_all(14)
 		style.set_content_margin_all(12)
 		style.content_margin_left = 34
 		style.content_margin_right = 34
-		style.border_color = Color(1, 1, 1, 0.85)
+		style.border_color = Color(1, 1, 1, 0.85 if active else 0.25)
 		style.set_border_width_all(3)
 		style.shadow_color = Color(0, 0, 0, 0.6)
 		style.shadow_size = 6
 		style.shadow_offset = Vector2(0, 4)
 		button.add_theme_stylebox_override(state[0], style)
-	button.pressed.connect(action)
-	return button
 
 
 func _show_lobby() -> void:

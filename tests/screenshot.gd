@@ -19,6 +19,8 @@ func _initialize() -> void:
 		_out = args[0]
 	if args.size() > 1:
 		_wait = float(args[1])
+	# Pas de tutoriel (il bloquerait la partie), sauf pour le photographier (SHOT_TUTO).
+	load("res://scripts/main.gd").skip_tutorial = not OS.has_environment("SHOT_TUTO")
 	if OS.has_environment("SHOT_SEAT"):
 		load("res://scripts/main.gd").local_seat_choice = int(OS.get_environment("SHOT_SEAT"))
 	if OS.has_environment("SHOT_BOTS"):
@@ -37,6 +39,9 @@ func _process(delta: float) -> bool:
 	if OS.has_environment("SHOT_LOBBY") and current_scene and current_scene.has_method("_show_lobby") and not _shots.has("lobby_opened"):
 		_shots["lobby_opened"] = true
 		current_scene._show_lobby()
+		if OS.get_environment("SHOT_LOBBY") == "options":
+			current_scene._lobby.visible = false
+			current_scene._show_options(true)
 		if OS.get_environment("SHOT_LOBBY") == "host":
 			current_scene._lobby._on_host_pressed()
 	_wait -= delta

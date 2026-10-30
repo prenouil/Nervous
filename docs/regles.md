@@ -15,6 +15,17 @@ Jeu de cartes de table en 3D, vu à la première personne. Jeu de rapidité insp
 - Les 52 cartes sont mélangées et distribuées en **tas égaux** (13 chacun à 4 joueurs). S'il reste des cartes (à 3, 5 ou 6 joueurs), elles sont mises de côté.
 - Chaque joueur tient son tas **dans la main gauche, face cachée**.
 
+## Tutoriel de début de partie
+
+Au début de chaque partie, un panneau rappelle les règles à tous les joueurs :
+- Quand c'est à toi, retourne une carte.
+- Sur le tas au centre, si 2 cartes de suite sont de même valeur, ou sont 2 têtes (n'importe lesquelles), il faut taper, mais pas en dernier ! Sinon tu ramasses toutes les cartes.
+- Si tu es le dernier avec des cartes, tu as perdu !
+- Attention, ne franchis pas le cercle, à part pour taper le tas, sinon tu ramasses !
+- BON JEU !
+
+Bouton **« Valider »** : la partie ne démarre que quand **tous les joueurs** ont validé (en réseau : « En attente des autres joueurs… »).
+
 ## Déroulement d'un tour
 
 - Les joueurs jouent **chacun leur tour**.
@@ -142,7 +153,7 @@ Les sons sont **synthétisés** par `tools/generate_sounds.gd` dans `sounds/` (f
 
 - Titre : **« Don't Be NERVOUS !!! »**, sur la table à 4 joueurs qui attend dans la pénombre.
 - **Jouer contre ◀ 5 ▶ ordis — [Jouer !]** : de 1 à 5 ordinateurs (2 à 6 joueurs en tout), 5 par défaut.
-- **Jouer à plusieurs** (grisé, à venir), **Options** (affichage fenêtré ou plein écran, mémorisé ; « Retour » ramène au menu), **Quitter**.
+- **Jouer à plusieurs** (salon), **Options** (affichage : « Fenêtré » ou « Plein écran », le choix actif en rouge, mémorisé ; « Retour » ramène au menu), **Quitter**.
 - En jeu, **Échap** met en pause : **Continuer** ou **Revenir au menu**.
 - En fin de partie : **R** pour rejouer, **M** pour revenir au menu.
 
