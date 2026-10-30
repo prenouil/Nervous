@@ -17,7 +17,7 @@ Jeu de cartes de table en 3D, vu à la première personne. Jeu de rapidité insp
 
 ## Tutoriel de début de partie
 
-Au début de chaque partie, un panneau rappelle les règles à tous les joueurs :
+Au début de la **première partie de la session** (pas aux suivantes), un panneau rappelle les règles à tous les joueurs :
 - Quand c'est à toi, retourne une carte.
 - Sur le tas au centre, si 2 cartes de suite sont de même valeur, ou sont 2 têtes (n'importe lesquelles), il faut taper, mais pas en dernier ! Sinon tu ramasses toutes les cartes.
 - Si tu es le dernier avec des cartes, tu as perdu !
@@ -79,9 +79,10 @@ Deux cartes consécutives forment une paire si :
 ## Nervous !
 
 - Un **cercle rouge** est tracé au centre de la table (diamètre : 3/8 de la table).
-- Une main droite qui **touche un peu le cercle** (moins de 2 cm) **pulse en rouge, tremble et grésille** (bruit discret d'électricité) : simple avertissement.
-- Une main qui **franchit la ligne** (plus de 2 cm) doit **taper dans les 0,5 s** (une feinte compte). Si le joueur ne tape pas à temps, **ou ramène sa main avant d'avoir tapé**, il est **nerveux** !
-- **Exception : jeter sa carte.** Pendant son tour, un joueur qui tient sa carte peut franchir la ligne impunément. Une fois la carte lâchée, il doit **ressortir du cercle dans la seconde**, sinon il est nerveux.
+- Une main droite qui **touche un peu le cercle** (moins de 4 cm) **pulse en rouge, tremble et grésille** (bruit discret d'électricité) : simple avertissement.
+- Une main qui **franchit la ligne** (plus de 4 cm) doit **taper dans la seconde** (une feinte compte). Si le joueur ne tape pas à temps, **ou ramène sa main avant d'avoir tapé**, il est **nerveux** !
+- **Exception : jeter sa carte.** Pendant son tour, un joueur qui tient sa carte peut franchir la ligne impunément. Une fois la carte lâchée, il a **2 s pour ressortir du cercle** tranquillement, sinon il est nerveux.
+- **Nouvelle manche** : une main restée dans le cercle (après une tape ou un ramassage) a aussi 2 s pour en sortir sans risque.
 - Le jeu s'arrête : grosse annonce **« NERVOUS !!! »** pendant environ 1 s, un **cri de terreur masculin** (« AAAH ! ») retentit, et une **lumière rouge clignote** sur la main fautive.
 - Pendant les **0,5 s** qui suivent, toute autre main qui franchit la ligne est aussi déclarée nerveuse.
 - Ensuite on l'explique (« Tu as été nerveux, tu perds ! ») et **les nerveux se partagent le tas**. Le premier nerveux joue la carte suivante (choix provisoire).

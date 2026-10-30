@@ -6,7 +6,7 @@ const SEAT_RADIUS := 0.55
 const HAND_FORWARD := -0.14   # mains au repos : avancée vers le centre, dans le repère du siège
 const HAND_RADIUS := 0.045                     # rayon de la paume
 const CIRCLE_RADIUS := TABLE_SIZE / 4.0 * 0.75  # cercle rouge : 3/8 de la table en diamètre
-const LINE_TOLERANCE := 0.02                    # au-delà, la main a franchi la ligne
+const LINE_TOLERANCE := 0.04                    # au-delà, la main a franchi la ligne (en deçà : simple avertissement)
 
 
 # Angle du siège : le joueur 0 est en +z, les autres répartis régulièrement dans le sens

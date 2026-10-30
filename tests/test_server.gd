@@ -197,6 +197,17 @@ func _run() -> void:
 	server.request_slap(3, _top())
 	_expect(ejected == [[2, 8]] and server._slap_valid, "tape partie à temps malgré le réseau : valide (%s)" % [ejected])
 
+	# 16. Nouvelle manche : une main restée dans le cercle a le temps d'en sortir tranquillement.
+	_new_server([[1, 3, 5], [14, 3, 6], [8, 9, 7], [10, 11, 12]])
+	nervous = []
+	server.player_nervous.connect(func(p, _o): nervous.append(p))
+	server.update_hand(2, inside)      # main dans le cercle pendant le ramassage
+	server._continue_with(0)           # nouvelle manche
+	await _wait(GameServer.THROW_EXIT_GRACE * 0.75)
+	server.update_hand(2, outside)
+	await _wait(0.3)
+	_expect(nervous.is_empty(), "nouvelle manche : main ressortie dans les temps, pas nerveux (%s)" % [nervous])
+
 	print("OK" if failures == 0 else "%d ÉCHEC(S)" % failures)
 	quit(failures)
 

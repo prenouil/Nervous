@@ -84,7 +84,7 @@ func _on_card_played(player: int, card: int, _center_count: int, _pos: Vector2, 
 func _creep(cross: bool) -> void:
 	_hand_token += 1
 	var token := _hand_token
-	var depth := rng.randf_range(0.04, 0.06) if cross else rng.randf_range(0.0, Table.LINE_TOLERANCE * 0.8)
+	var depth := rng.randf_range(Table.LINE_TOLERANCE + 0.01, Table.LINE_TOLERANCE + 0.03) if cross else rng.randf_range(0.0, Table.LINE_TOLERANCE * 0.8)
 	_after(server.card_travel + rng.randf_range(0.1, 0.4), func():
 		if token != _hand_token:
 			return
@@ -102,7 +102,7 @@ func _on_player_nervous(player: int, order: int) -> void:
 	var token := _hand_token
 	_after(rng.randf_range(0.1, 0.4), func():
 		if token == _hand_token:
-			server.update_hand(seat, _toward_center(rng.randf_range(0.05, 0.08))))
+			server.update_hand(seat, _toward_center(rng.randf_range(Table.LINE_TOLERANCE + 0.02, Table.LINE_TOLERANCE + 0.05))))
 
 
 # Position sur le chemin repos → centre où la paume empiète de depth sur le cercle.

@@ -37,8 +37,8 @@ const REVEAL_READ := 1.6         # temps de lecture du verdict
 const NERVOUS_SETTLE := 0.3      # après l'annonce NERVOUS, le verdict arrive presque aussitôt
 const NERVOUS_READ := 1.2        # et se lit plus vite
 const RESOLVE_DELAY := 1.9    # pause après un ramassage, le temps de l'animation
-const NERVOUS_GRACE := 0.5   # main qui franchit la ligne du cercle : temps pour taper
-const THROW_EXIT_GRACE := 1.0  # carte lâchée dans le cercle : temps pour en ressortir
+const NERVOUS_GRACE := 1.0   # main qui franchit la ligne du cercle : temps pour taper
+const THROW_EXIT_GRACE := 2.0  # carte lâchée dans le cercle (ou nouvelle manche) : temps pour en ressortir tranquillement
 const NERVOUS_CONTAGION := 0.5  # après un premier nerveux, temps pendant lequel d'autres peuvent l'être aussi
 const NERVOUS_SHOW := 1.2    # durée de l'annonce « NERVOUS !!! » avant le verdict
 const PILE_SPREAD_MIN := 0.03 # dispersion des cartes au centre : rayon au début...
@@ -402,6 +402,7 @@ func _on_turn_timeout() -> void:
 
 
 func _continue_with(p: int) -> void:
+	_grant_exit_grace()
 	_update_speed()
 	if rules.is_over():
 		_end_game()
@@ -581,3 +582,13 @@ func replace_by_bot(seat: int) -> void:
 	_throw_exit[seat] = false
 	_cross_start[seat] = -1.0
 	player_replaced.emit(seat)
+
+
+# Nouvelle manche : une main restée dans le cercle (après une tape, un ramassage, ou une
+# carte tenue quand quelqu'un a tapé) a THROW_EXIT_GRACE secondes pour en sortir sans risque.
+func _grant_exit_grace() -> void:
+	_ensure_players()
+	for p in _hand_pos.size():
+		if Table.intrusion(_hand_pos[p]) > Table.LINE_TOLERANCE:
+			_throw_exit[p] = true
+			_cross_start[p] = _clock

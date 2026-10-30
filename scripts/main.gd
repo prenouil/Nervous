@@ -65,6 +65,8 @@ static var bot_count := DEFAULT_BOTS
 static var local_seat_choice := 0
 # Tests : démarre sans le tutoriel.
 static var skip_tutorial := false
+# Le tutoriel ne s'affiche qu'à la première partie de la session.
+static var tutorial_seen := false
 
 # Mode « attente » : la table à 4 joueurs, dans la pénombre, sert de fond au menu.
 var demo_mode := false
@@ -219,7 +221,7 @@ func _ready() -> void:
 	else:
 		server.remote = true  # relais : demandes envoyées à l'hôte, annonces reçues de lui
 		start = Net.scene_ready
-	if skip_tutorial or OS.has_environment("SKIP_TUTO") or OS.has_environment("AUTOPLAY"):
+	if tutorial_seen or skip_tutorial or OS.has_environment("SKIP_TUTO") or OS.has_environment("AUTOPLAY"):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		start.call_deferred()
 	else:
@@ -1453,6 +1455,7 @@ const TUTORIAL_LINES := [
 # Au début de la partie : rappel des règles, et « Valider ». La partie démarre quand
 # tous les joueurs ont validé.
 func _show_tutorial(on_validate: Callable) -> void:
+	tutorial_seen = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_tutorial = CanvasLayer.new()
 	_tutorial.layer = 5
