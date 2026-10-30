@@ -102,6 +102,8 @@ var hud_speed: Label
 var _pause_layer: CanvasLayer
 var _tutorial: CanvasLayer
 var _new_round := false  # un ramassage vient d'avoir lieu : la prochaine manche commence
+var _slap_phase := false        # des tapes sont en cours : la règle de nervosité est suspendue
+var _warnings_off_until := 0.0  # suspension après une feinte (horloge en secondes)
 
 var _camera_pos := Vector3.ZERO
 var _camera_base := Basis()
@@ -579,7 +581,10 @@ func _update_hand_warnings() -> void:
 	for p in seat_count:
 		var hand := right_hands[p]
 		var level := 0.0
-		if not hand_locked[p] or hand.has_meta("nervous"):
+		# Pas d'avertissement quand la règle ne s'applique pas (tapes en cours, feinte récente,
+		# carte tenue pour la lancer) ; une main déclarée nerveuse clignote toujours.
+		var exempt := _nervous_rule_off(t) or (p == local_seat and _held_card != null)
+		if not exempt and not hand_locked[p]:
 			var pos := Vector2(hand.global_position.x, hand.global_position.z)
 			level = clampf(Table.intrusion(pos) / Table.LINE_TOLERANCE, 0.0, 1.0)
 		if hand.has_meta("nervous"):
@@ -774,6 +779,7 @@ func _on_game_started(start_counts: Array) -> void:
 
 
 func _on_turn_started(player: int, duration: float) -> void:
+	_slap_phase = false  # nouveau tour : la règle de nervosité s'applique de nouveau
 	if _new_round:  # début de manche (après un ramassage) : ta main ressort de la zone
 		_new_round = false
 		_pull_hand_out()
@@ -860,6 +866,7 @@ func _on_card_ejected(player: int, _card: int) -> void:
 
 
 func _on_slap_registered(player: int, order: int, pos: Vector2) -> void:
+	_slap_phase = true  # quelqu'un a tapé : plus de nervosité jusqu'à la manche suivante
 	if player == local_seat:
 		_human_slap_answered = true
 	_turn_player = -1  # le jeu est bloqué par les mains : plus de compte à rebours
@@ -1063,6 +1070,7 @@ func _clear_nervous_hands() -> void:
 
 
 func _on_slap_missed(player: int, pos: Vector2) -> void:
+	_warnings_off_until = Time.get_ticks_msec() / 1000.0 + GameServer.NERVOUS_SUSPEND  # une feinte suspend la règle
 	if player == local_seat:
 		_human_slap_answered = true
 	_animate_slap(player, pos, 0, false)
@@ -1538,3 +1546,7 @@ func _pull_hand_out() -> void:
 	_hand_target = Vector3(out.x, HAND_Y, out.y)
 	if not hand_locked[local_seat]:
 		hand.global_position = _hand_target  # tout de suite, pas en glissant
+
+
+func _nervous_rule_off(now: float) -> bool:
+	return _slap_phase or now < _warnings_off_until

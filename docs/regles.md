@@ -79,7 +79,7 @@ Deux cartes consécutives forment une paire si :
 ## Nervous !
 
 - Un **cercle rouge** est tracé au centre de la table (diamètre : 3/8 de la table).
-- Une main droite qui **touche un peu le cercle** (moins de 4 cm) **pulse en rouge, tremble et grésille** (bruit discret d'électricité) : simple avertissement.
+- Une main droite qui **touche un peu le cercle** (moins de 4 cm) **pulse en rouge, tremble et grésille** (bruit discret d'électricité) : simple avertissement. Pas d'avertissement quand la règle est suspendue (tapes en cours, feinte récente, carte tenue pour la lancer).
 - Une main qui **franchit la ligne** (plus de 4 cm) doit **taper dans la seconde** (une feinte compte). Si le joueur ne tape pas à temps, **ou ramène sa main avant d'avoir tapé**, il est **nerveux** !
 - **Exception : jeter sa carte.** Pendant son tour, un joueur qui tient sa carte peut franchir la ligne impunément. Une fois la carte lâchée, il a **2 s pour ressortir du cercle** tranquillement, sinon il est nerveux.
 - **Quand quelqu'un tape** (même une feinte à côté), **plus de nervosité pour personne** : jusqu'à la fin de la manche pour une vraie tape, pendant 1,5 s pour une feinte (ceux qui ont avancé la main par réflexe peuvent la retirer sans risque).
